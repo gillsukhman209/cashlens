@@ -9,22 +9,48 @@ struct DashboardView: View {
     @State private var isLoading = true
     @State private var error: String?
 
+    // Filter out hidden accounts
+    private var visibleAccounts: [Account] {
+        let hiddenIds = UserDefaults.standard.stringArray(forKey: "hiddenAccountIds") ?? []
+        return accounts.filter { !hiddenIds.contains($0.id) }
+    }
+
+    private var visibleNetWorth: Double {
+        visibleAccounts.reduce(0) { $0 + $1.currentBalance }
+    }
+
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Net Worth Card
-                    netWorthCard
+            ZStack {
+                // Vibrant gradient background
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.95, green: 0.97, blue: 1.0),
+                        Color(red: 0.98, green: 0.96, blue: 1.0),
+                        Color(red: 1.0, green: 0.98, blue: 0.96)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-                    // Account Summary
-                    if let totals = totals {
-                        accountSummaryCard(totals: totals)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 24) {
+                        // Hero Net Worth Section
+                        netWorthSection
+
+                        // Quick Stats
+                        if let totals = totals {
+                            quickStatsGrid(totals: totals)
+                        }
+
+                        // Recent Activity
+                        recentActivitySection
                     }
-
-                    // Recent Transactions
-                    recentTransactionsCard
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, 100)
                 }
-                .padding()
             }
             .navigationTitle("Dashboard")
             .refreshable {
@@ -36,115 +62,196 @@ struct DashboardView: View {
         }
     }
 
-    private var netWorthCard: some View {
-        VStack(spacing: 8) {
-            Text("Net Worth")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+    // MARK: - Net Worth Section
+    private var netWorthSection: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Total Balance")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.85))
 
-            if isLoading {
-                ProgressView()
-            } else {
-                Text(formatCurrency(netWorth))
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundColor(netWorth >= 0 ? .primary : .red)
-            }
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text(formatCurrency(visibleNetWorth))
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    Spacer()
 
-            Text("Across \(accounts.count) accounts")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(24)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
-    }
+                    // Trend Indicator
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 50, height: 50)
 
-    private func accountSummaryCard(totals: AccountTotals) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Account Summary")
-                .font(.headline)
-
-            HStack(spacing: 16) {
-                summaryItem(title: "Checking", amount: totals.checking, icon: "dollarsign.circle.fill", color: .blue)
-                summaryItem(title: "Savings", amount: totals.savings, icon: "banknote.fill", color: .green)
-            }
-
-            HStack(spacing: 16) {
-                summaryItem(title: "Credit", amount: -totals.credit, icon: "creditcard.fill", color: .red)
-                summaryItem(title: "Investments", amount: totals.investment, icon: "chart.line.uptrend.xyaxis", color: .purple)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
-    }
-
-    private func summaryItem(title: String, amount: Double, icon: String, color: Color) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .font(.title2)
-
-            VStack(alignment: .leading) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(formatCurrency(amount))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(12)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
-    }
-
-    private var recentTransactionsCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Recent Transactions")
-                    .font(.headline)
-                Spacer()
-                NavigationLink(destination: TransactionsView()) {
-                    Text("See All")
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
+                        Image(systemName: visibleNetWorth >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
-            }
 
-            if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding()
-            } else if transactions.isEmpty {
-                Text("No transactions yet")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-            } else {
-                ForEach(transactions.prefix(5)) { transaction in
-                    TransactionRow(transaction: transaction)
-                    if transaction.id != transactions.prefix(5).last?.id {
-                        Divider()
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(height: 1)
+
+                // Accounts Count
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.75))
+
+                        Text("\(visibleAccounts.count) accounts")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+
+                        Text("Live")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                 }
             }
+            .padding(24)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.35, green: 0.45, blue: 0.95),
+                        Color(red: 0.55, green: 0.35, blue: 0.95)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(24)
+            .shadow(color: Color.purple.opacity(0.3), radius: 20, x: 0, y: 10)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
     }
 
+    // MARK: - Quick Stats Grid
+    private func quickStatsGrid(totals: AccountTotals) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Account Summary")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 12) {
+                ColorfulStatCard(
+                    title: "Checking",
+                    amount: totals.checking,
+                    icon: "dollarsign.circle.fill",
+                    gradientColors: [Color.blue, Color.cyan]
+                )
+
+                ColorfulStatCard(
+                    title: "Savings",
+                    amount: totals.savings,
+                    icon: "leaf.fill",
+                    gradientColors: [Color.green, Color.mint]
+                )
+
+                ColorfulStatCard(
+                    title: "Credit",
+                    amount: -totals.credit,
+                    icon: "creditcard.fill",
+                    gradientColors: [Color.orange, Color.red]
+                )
+
+                ColorfulStatCard(
+                    title: "Investments",
+                    amount: totals.investment,
+                    icon: "chart.line.uptrend.xyaxis",
+                    gradientColors: [Color.purple, Color.pink]
+                )
+            }
+        }
+    }
+
+    // MARK: - Recent Activity Section
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Recent Activity")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+                Spacer()
+
+                NavigationLink(destination: TransactionsView()) {
+                    HStack(spacing: 4) {
+                        Text("View All")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+
+            VStack(spacing: 0) {
+                if isLoading {
+                    ForEach(0..<3, id: \.self) { _ in
+                        TransactionSkeletonRow()
+                    }
+                } else if transactions.isEmpty {
+                    emptyTransactionsView
+                } else {
+                    ForEach(Array(transactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
+                        ColorfulTransactionRow(transaction: transaction)
+
+                        if index < min(4, transactions.count - 1) {
+                            Divider()
+                                .padding(.leading, 60)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(Color(.systemBackground))
+            .cornerRadius(20)
+            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+        }
+    }
+
+    private var emptyTransactionsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 32))
+                .foregroundColor(.secondary)
+
+            Text("No transactions yet")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Text("Your recent activity will appear here")
+                .font(.caption)
+                .foregroundColor(.secondary.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    // MARK: - Data Loading
     private func loadData() async {
         isLoading = true
         error = nil
@@ -179,52 +286,193 @@ struct DashboardView: View {
     }
 }
 
-struct TransactionRow: View {
+// MARK: - Colorful Stat Card
+struct ColorfulStatCard: View {
+    let title: String
+    let amount: Double
+    let icon: String
+    let gradientColors: [Color]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: gradientColors.map { $0.opacity(0.2) },
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 40, height: 40)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(formatCurrency(amount))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(amount < 0 ? .red : Color(red: 0.1, green: 0.1, blue: 0.2))
+            }
+        }
+        .padding(16)
+        .background(Color(.systemBackground))
+        .cornerRadius(18)
+        .shadow(color: gradientColors[0].opacity(0.15), radius: 10, x: 0, y: 5)
+    }
+
+    private func formatCurrency(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: amount)) ?? "$0.00"
+    }
+}
+
+// MARK: - Colorful Transaction Row
+struct ColorfulTransactionRow: View {
     let transaction: Transaction
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Icon
-            Image(systemName: transaction.categoryIcon)
-                .font(.title3)
-                .foregroundColor(.blue)
-                .frame(width: 40, height: 40)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(10)
+        HStack(spacing: 14) {
+            // Category Icon with gradient
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [categoryColor.opacity(0.2), categoryColor.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: transaction.categoryIcon)
+                    .font(.system(size: 18))
+                    .foregroundColor(categoryColor)
+            }
 
             // Details
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
+                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
                     .lineLimit(1)
 
-                Text(transaction.category ?? "Uncategorized")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    Text(transaction.category ?? "Uncategorized")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if transaction.pending {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 5, height: 5)
+                            Text("Pending")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
             }
 
             Spacer()
 
             // Amount
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 4) {
                 Text(transaction.isIncome ? "+\(transaction.displayAmount)" : "-\(transaction.displayAmount)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(transaction.isIncome ? .green : .primary)
+                    .foregroundColor(transaction.isIncome ? .green : Color(red: 0.1, green: 0.1, blue: 0.2))
 
                 Text(formatDate(transaction.date))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 10)
+    }
+
+    private var categoryColor: Color {
+        switch transaction.category?.lowercased() {
+        case "food and drink", "restaurants":
+            return .orange
+        case "shopping":
+            return .pink
+        case "travel":
+            return .blue
+        case "transfer", "payment":
+            return .purple
+        case "income":
+            return .green
+        case "entertainment":
+            return .red
+        default:
+            return .blue
+        }
     }
 
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Skeleton Loading Row
+struct TransactionSkeletonRow: View {
+    @State private var isAnimating = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(Color(.systemGray5))
+                .frame(width: 46, height: 46)
+
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(.systemGray5))
+                    .frame(width: 120, height: 14)
+
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(.systemGray6))
+                    .frame(width: 80, height: 12)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(.systemGray5))
+                    .frame(width: 60, height: 14)
+
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(.systemGray6))
+                    .frame(width: 40, height: 12)
+            }
+        }
+        .padding(.vertical, 10)
+        .opacity(isAnimating ? 0.5 : 1.0)
+        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
+        .onAppear { isAnimating = true }
     }
 }
 

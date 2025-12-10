@@ -15,10 +15,12 @@ struct CashLensApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(apiClient)
+                .preferredColorScheme(.light) // Force light mode
         }
     }
 }
 
+// MARK: - Root View
 struct RootView: View {
     @EnvironmentObject var apiClient: APIClient
     @State private var hasLinkedBank = false
@@ -28,22 +30,14 @@ struct RootView: View {
     var body: some View {
         Group {
             if isCheckingStatus {
-                // Loading state
-                VStack(spacing: 16) {
-                    ProgressView()
-                    Text("Loading...")
-                        .foregroundColor(.secondary)
-                }
+                LoadingView()
             } else if !hasUser {
-                // Onboarding - Create user
                 OnboardingView(hasUser: $hasUser)
                     .environmentObject(apiClient)
             } else if !hasLinkedBank {
-                // No bank linked yet
                 PlaidLinkView(hasLinkedBank: $hasLinkedBank)
                     .environmentObject(apiClient)
             } else {
-                // Main app with tab bar
                 MainTabView()
                     .environmentObject(apiClient)
             }
@@ -54,11 +48,8 @@ struct RootView: View {
     }
 
     private func checkStatus() async {
-        // Check if user exists
         if apiClient.userId != nil {
             hasUser = true
-
-            // Check if any banks are linked
             do {
                 let response = try await apiClient.getInstitutions()
                 await MainActor.run {
@@ -80,6 +71,25 @@ struct RootView: View {
     }
 }
 
+// MARK: - Loading View
+struct LoadingView: View {
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("Loading...")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Onboarding View
 struct OnboardingView: View {
     @EnvironmentObject var apiClient: APIClient
     @Binding var hasUser: Bool
@@ -87,86 +97,143 @@ struct OnboardingView: View {
     @State private var email = ""
     @State private var isLoading = false
     @State private var error: String?
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case name, email
+    }
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                colors: [Color(.systemBackground), Color(.systemGray6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-            // App Icon/Logo
-            Image(systemName: "chart.pie.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.blue)
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer()
+                        .frame(height: 80)
 
-            // Title
-            VStack(spacing: 8) {
-                Text("Welcome to CashLens")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    // Logo
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue, .blue.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 100, height: 100)
 
-                Text("See all your finances in one place")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            // Input Fields
-            VStack(spacing: 16) {
-                TextField("Your Name", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .textContentType(.name)
-
-                TextField("Email", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-            }
-            .padding(.horizontal, 32)
-
-            if let error = error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-
-            // Continue Button
-            Button(action: {
-                Task {
-                    await createUser()
-                }
-            }) {
-                HStack {
-                    if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text("Get Started")
+                        Image(systemName: "chart.pie.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.white)
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(canContinue ? Color.blue : Color.gray)
-                .foregroundColor(.white)
-                .cornerRadius(12)
-            }
-            .disabled(!canContinue || isLoading)
-            .padding(.horizontal, 32)
+                    .shadow(color: .blue.opacity(0.3), radius: 20, x: 0, y: 10)
 
-            Spacer()
+                    Spacer()
+                        .frame(height: 40)
+
+                    // Title
+                    Text("CashLens")
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+
+                    Text("Your finances, simplified")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                    Spacer()
+                        .frame(height: 60)
+
+                    // Input Fields
+                    VStack(spacing: 16) {
+                        CustomTextField(
+                            placeholder: "Your name",
+                            text: $name,
+                            icon: "person.fill"
+                        )
+                        .focused($focusedField, equals: .name)
+                        .textContentType(.name)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .email }
+
+                        CustomTextField(
+                            placeholder: "Email address",
+                            text: $email,
+                            icon: "envelope.fill"
+                        )
+                        .focused($focusedField, equals: .email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                        .submitLabel(.done)
+                        .onSubmit { focusedField = nil }
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Error
+                    if let error = error {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .padding(.top, 12)
+                    }
+
+                    Spacer()
+                        .frame(height: 40)
+
+                    // Button
+                    Button(action: { Task { await createUser() } }) {
+                        HStack(spacing: 8) {
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text("Get Started")
+                                    .fontWeight(.semibold)
+                                Image(systemName: "arrow.right")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(
+                            canContinue
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                                : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .foregroundColor(canContinue ? .white : .gray)
+                        .cornerRadius(16)
+                    }
+                    .disabled(!canContinue || isLoading)
+                    .padding(.horizontal, 24)
+
+                    Spacer()
+                        .frame(height: 100)
+                }
+            }
         }
+        .onTapGesture { focusedField = nil }
     }
 
     private var canContinue: Bool {
-        !name.isEmpty && !email.isEmpty && email.contains("@")
+        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
+        email.contains("@")
     }
 
     private func createUser() async {
+        focusedField = nil
         isLoading = true
         error = nil
 
         do {
-            _ = try await apiClient.createUser(email: email, name: name)
+            _ = try await apiClient.createUser(email: email.trimmingCharacters(in: .whitespaces), name: name.trimmingCharacters(in: .whitespaces))
             await MainActor.run {
                 hasUser = true
                 isLoading = false
@@ -180,33 +247,65 @@ struct OnboardingView: View {
     }
 }
 
-struct MainTabView: View {
+// MARK: - Custom Text Field
+struct CustomTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    let icon: String
+
     var body: some View {
-        TabView {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.secondary)
+                .frame(width: 20)
+
+            TextField(placeholder, text: $text)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Main Tab View
+struct MainTabView: View {
+    @State private var selectedTab = 0
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
             DashboardView()
                 .tabItem {
-                    Label("Dashboard", systemImage: "house.fill")
+                    Image(systemName: selectedTab == 0 ? "house.fill" : "house")
+                    Text("Home")
                 }
+                .tag(0)
 
             AccountsView()
                 .tabItem {
-                    Label("Accounts", systemImage: "building.columns.fill")
+                    Image(systemName: selectedTab == 1 ? "creditcard.fill" : "creditcard")
+                    Text("Accounts")
                 }
+                .tag(1)
 
             TransactionsView()
                 .tabItem {
-                    Label("Transactions", systemImage: "list.bullet.rectangle.fill")
+                    Image(systemName: selectedTab == 2 ? "list.bullet.rectangle.fill" : "list.bullet.rectangle")
+                    Text("Activity")
                 }
+                .tag(2)
 
             SettingsView()
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
+                    Image(systemName: selectedTab == 3 ? "gearshape.fill" : "gearshape")
+                    Text("Settings")
                 }
+                .tag(3)
         }
+        .tint(.blue)
     }
 }
 
 #Preview {
-    RootView()
+    OnboardingView(hasUser: .constant(false))
         .environmentObject(APIClient.shared)
 }
