@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A2DE16C2EEA1F6B00100A44 /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2DE16B2EEA1F6B00100A44 /* LinkKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1A2DE1432EE9602A00100A44 /* CashLens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CashLens.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A2DE16C2EEA1F6B00100A44 /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = CashLens;
 			packageProductDependencies = (
+				1A2DE16B2EEA1F6B00100A44 /* LinkKit */,
 			);
 			productName = CashLens;
 			productReference = 1A2DE1432EE9602A00100A44 /* CashLens.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 1A2DE13A2EE9602A00100A44;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1A2DE16A2EEA1F6B00100A44 /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1A2DE1442EE9602A00100A44 /* Products */;
 			projectDirPath = "";
@@ -332,6 +341,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A2DE16A2EEA1F6B00100A44 /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A2DE16B2EEA1F6B00100A44 /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A2DE16A2EEA1F6B00100A44 /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */;
+			productName = LinkKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1A2DE13B2EE9602A00100A44 /* Project object */;
 }
