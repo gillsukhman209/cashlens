@@ -294,12 +294,19 @@ struct MainTabView: View {
                 }
                 .tag(2)
 
-            SettingsView()
+            SubscriptionsView()
                 .tabItem {
-                    Image(systemName: selectedTab == 3 ? "gearshape.fill" : "gearshape")
-                    Text("Settings")
+                    Image(systemName: selectedTab == 3 ? "repeat.circle.fill" : "repeat.circle")
+                    Text("Subscriptions")
                 }
                 .tag(3)
+
+            SettingsView()
+                .tabItem {
+                    Image(systemName: selectedTab == 4 ? "gearshape.fill" : "gearshape")
+                    Text("Settings")
+                }
+                .tag(4)
         }
         .tint(.blue)
     }

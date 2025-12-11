@@ -261,9 +261,12 @@ struct PlaidLinkView: View {
             case .success(let handler):
                 self.handler = handler
                 await MainActor.run {
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let viewController = windowScene.windows.first?.rootViewController {
+                    // Find the topmost presented view controller (important when presented as a sheet)
+                    if let viewController = Self.getTopViewController() {
                         handler.open(presentUsing: .viewController(viewController))
+                    } else {
+                        self.error = "Unable to present Plaid Link"
+                        isLoading = false
                     }
                 }
             case .failure(let error):
@@ -274,6 +277,22 @@ struct PlaidLinkView: View {
             self.error = error.localizedDescription
             isLoading = false
         }
+    }
+
+    // Helper to find the topmost view controller
+    private static func getTopViewController() -> UIViewController? {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first,
+              var topController = window.rootViewController else {
+            return nil
+        }
+
+        // Traverse to the topmost presented view controller
+        while let presented = topController.presentedViewController {
+            topController = presented
+        }
+
+        return topController
     }
 
     private func handleSuccess(_ success: LinkSuccess) async {

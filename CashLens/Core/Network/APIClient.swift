@@ -166,6 +166,21 @@ class APIClient: ObservableObject {
         let (data, _) = try await URLSession.shared.data(from: url)
         return try JSONDecoder().decode(InstitutionsResponse.self, from: data)
     }
+
+    // MARK: - Subscriptions
+
+    func getSubscriptions(months: Int = 3) async throws -> SubscriptionsResponse {
+        guard let userId = userId else {
+            throw APIError.noUser
+        }
+
+        let url = URL(string: "\(baseURL)/subscriptions?userId=\(userId)&months=\(months)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(SubscriptionsResponse.self, from: data)
+    }
 }
 
 // MARK: - Errors

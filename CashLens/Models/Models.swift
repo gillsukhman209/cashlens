@@ -233,3 +233,70 @@ struct LinkedInstitution: Codable, Identifiable {
 struct InstitutionsResponse: Codable {
     let institutions: [LinkedInstitution]
 }
+
+// MARK: - Subscription
+
+struct Subscription: Codable, Identifiable {
+    let id: String
+    let merchantName: String
+    let amount: Double
+    let frequency: String
+    let category: String?
+    let lastCharge: Date
+    let nextExpected: Date?
+    let accountName: String?
+    let accountMask: String?
+    let logoUrl: String?
+    let transactionCount: Int
+    let confidence: Double
+
+    var displayAmount: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: amount)) ?? "$\(amount)"
+    }
+
+    var frequencyLabel: String {
+        switch frequency {
+        case "weekly": return "Weekly"
+        case "bi-weekly": return "Bi-weekly"
+        case "monthly": return "Monthly"
+        case "quarterly": return "Quarterly"
+        case "yearly": return "Yearly"
+        default: return frequency.capitalized
+        }
+    }
+
+    var categoryIcon: String {
+        guard let category = category?.lowercased() else { return "repeat.circle" }
+
+        if category.contains("entertainment") || category.contains("streaming") {
+            return "play.tv.fill"
+        } else if category.contains("software") || category.contains("technology") {
+            return "laptopcomputer"
+        } else if category.contains("food") || category.contains("restaurant") {
+            return "fork.knife"
+        } else if category.contains("health") || category.contains("fitness") {
+            return "heart.fill"
+        } else if category.contains("music") {
+            return "music.note"
+        } else if category.contains("news") || category.contains("media") {
+            return "newspaper.fill"
+        } else if category.contains("utility") || category.contains("bill") {
+            return "bolt.fill"
+        } else if category.contains("insurance") {
+            return "shield.fill"
+        } else if category.contains("membership") || category.contains("subscription") {
+            return "person.2.fill"
+        } else {
+            return "repeat.circle"
+        }
+    }
+}
+
+struct SubscriptionsResponse: Codable {
+    let subscriptions: [Subscription]
+    let totalMonthly: Double
+    let count: Int
+}
