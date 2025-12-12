@@ -311,8 +311,17 @@ struct TransactionsView: View {
         error = nil
         offset = 0
 
+        print("[DEBUG] TransactionsView: Loading transactions...")
+        print("[DEBUG] TransactionsView: userId = \(apiClient.userId ?? "nil")")
+
         do {
             let response = try await apiClient.getTransactions(limit: limit, offset: 0)
+            print("[DEBUG] TransactionsView: Got \(response.transactions.count) transactions, total: \(response.total), hasMore: \(response.hasMore)")
+            if response.transactions.isEmpty {
+                print("[DEBUG] TransactionsView: No transactions returned!")
+            } else {
+                print("[DEBUG] TransactionsView: First transaction: \(response.transactions.first?.name ?? "unknown")")
+            }
             await MainActor.run {
                 self.transactions = response.transactions
                 self.hasMore = response.hasMore
@@ -320,6 +329,7 @@ struct TransactionsView: View {
                 self.isLoading = false
             }
         } catch {
+            print("[DEBUG] TransactionsView: ERROR - \(error.localizedDescription)")
             await MainActor.run {
                 self.error = error.localizedDescription
                 self.isLoading = false

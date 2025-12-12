@@ -154,6 +154,7 @@ class APIClient: ObservableObject {
 
     func getTransactions(startDate: Date? = nil, endDate: Date? = nil, limit: Int = 50, offset: Int = 0) async throws -> TransactionsResponse {
         guard let userId = userId else {
+            print("[DEBUG] APIClient.getTransactions: No userId!")
             throw APIError.noUser
         }
 
@@ -176,11 +177,29 @@ class APIClient: ObservableObject {
 
         components.queryItems = queryItems
 
-        let (data, _) = try await URLSession.shared.data(from: components.url!)
+        print("[DEBUG] APIClient.getTransactions: Fetching from \(components.url!.absoluteString)")
+
+        let (data, response) = try await URLSession.shared.data(from: components.url!)
+
+        // Debug: Print raw response
+        if let httpResponse = response as? HTTPURLResponse {
+            print("[DEBUG] APIClient.getTransactions: HTTP Status = \(httpResponse.statusCode)")
+        }
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("[DEBUG] APIClient.getTransactions: Response (first 500 chars) = \(String(jsonString.prefix(500)))")
+        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(TransactionsResponse.self, from: data)
+
+        do {
+            let result = try decoder.decode(TransactionsResponse.self, from: data)
+            print("[DEBUG] APIClient.getTransactions: Decoded \(result.transactions.count) transactions successfully")
+            return result
+        } catch {
+            print("[DEBUG] APIClient.getTransactions: Decode error = \(error)")
+            throw error
+        }
     }
 
     // MARK: - Institutions
@@ -228,6 +247,200 @@ class APIClient: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(SubscriptionsResponse.self, from: data)
+    }
+
+    // MARK: - Manual Import
+
+    func createManualAccount(name: String, type: String, subtype: String?, institutionName: String) async throws -> CreateManualAccountResponse {
+        guard let userId = userId else {
+            print("[DEBUG] createManualAccount: No userId!")
+            throw APIError.noUser
+        }
+
+        print("[DEBUG] createManualAccount: Creating account with userId=\(userId), name=\(name), type=\(type)")
+
+        let url = URL(string: "\(baseURL)/accounts")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = [
+            "userId": userId,
+            "name": name,
+            "type": type,
+            "institutionName": institutionName
+        ]
+        if let subtype = subtype {
+            body["subtype"] = subtype
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse {
+            print("[DEBUG] createManualAccount: HTTP Status = \(httpResponse.statusCode)")
+        }
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("[DEBUG] createManualAccount: Response = \(jsonString)")
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to create manual account")
+        }
+
+        let result = try JSONDecoder().decode(CreateManualAccountResponse.self, from: data)
+        print("[DEBUG] createManualAccount: Success! accountId=\(result.accountId), plaidItemId=\(result.plaidItemId)")
+        return result
+    }
+
+    func importCSV(fileData: Data, accountId: String, format: String) async throws -> ImportResponse {
+        guard let userId = userId else {
+            print("[DEBUG] importCSV: No userId!")
+            throw APIError.noUser
+        }
+
+        print("[DEBUG] importCSV: Starting import with userId=\(userId), accountId=\(accountId), format=\(format)")
+        print("[DEBUG] importCSV: File size = \(fileData.count) bytes")
+
+        let url = URL(string: "\(baseURL)/import")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        // Add userId
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"userId\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
+
+        // Add accountId
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"accountId\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(accountId)\r\n".data(using: .utf8)!)
+
+        // Add format
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"format\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(format)\r\n".data(using: .utf8)!)
+
+        // Add file
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"transactions.csv\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: text/csv\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse {
+            print("[DEBUG] importCSV: HTTP Status = \(httpResponse.statusCode)")
+        }
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("[DEBUG] importCSV: Response = \(jsonString)")
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to import CSV")
+        }
+
+        let result = try JSONDecoder().decode(ImportResponse.self, from: data)
+        print("[DEBUG] importCSV: Success! Imported \(result.imported) transactions, balance = \(result.balance)")
+        return result
+    }
+
+    func importMultipleCSV(files: [(name: String, data: Data)], mode: String, accountName: String, format: String) async throws -> MultiFileImportResponse {
+        guard let userId = userId else {
+            print("[DEBUG] importMultipleCSV: No userId!")
+            throw APIError.noUser
+        }
+
+        print("[DEBUG] importMultipleCSV: Starting import with userId=\(userId), mode=\(mode), files=\(files.count)")
+
+        let url = URL(string: "\(baseURL)/import/multi")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        // Add userId
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"userId\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
+
+        // Add mode
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"mode\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(mode)\r\n".data(using: .utf8)!)
+
+        // Add accountName
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"accountName\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(accountName)\r\n".data(using: .utf8)!)
+
+        // Add format
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"format\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(format)\r\n".data(using: .utf8)!)
+
+        // Add each file
+        for (index, file) in files.enumerated() {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"files\"; filename=\"\(file.name)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: text/csv\r\n\r\n".data(using: .utf8)!)
+            body.append(file.data)
+            body.append("\r\n".data(using: .utf8)!)
+            print("[DEBUG] importMultipleCSV: Added file \(index + 1): \(file.name) (\(file.data.count) bytes)")
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        print("[DEBUG] importMultipleCSV: Total body size = \(body.count) bytes")
+        print("[DEBUG] importMultipleCSV: Files array count = \(files.count)")
+
+        // Debug: print first 500 chars of body as string
+        if let bodyString = String(data: body.prefix(500), encoding: .utf8) {
+            print("[DEBUG] importMultipleCSV: Body start = \(bodyString)")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse {
+            print("[DEBUG] importMultipleCSV: HTTP Status = \(httpResponse.statusCode)")
+        }
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("[DEBUG] importMultipleCSV: Response = \(String(jsonString.prefix(1000)))")
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to import CSV files")
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let result = try decoder.decode(MultiFileImportResponse.self, from: data)
+        print("[DEBUG] importMultipleCSV: Success! Mode=\(result.mode), Transactions=\(result.totalTransactions), Subscriptions=\(result.subscriptionsDetected)")
+        return result
     }
 }
 

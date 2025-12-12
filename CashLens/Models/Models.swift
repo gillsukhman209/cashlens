@@ -133,7 +133,7 @@ struct AccountTotals: Codable {
 
 struct Transaction: Codable, Identifiable {
     let id: String
-    let plaidTransactionId: String
+    let plaidTransactionId: String?
     let amount: Double
     let isoCurrencyCode: String
     let date: Date
@@ -403,4 +403,32 @@ struct SubscriptionTransaction: Codable, Identifiable {
     let date: Date
     let accountName: String?
     let accountMask: String?
+}
+
+// MARK: - Manual Import
+
+struct CreateManualAccountResponse: Codable {
+    let success: Bool
+    let accountId: String
+    let plaidItemId: String
+}
+
+struct ImportResponse: Codable {
+    let success: Bool
+    let imported: Int
+    let balance: Double
+}
+
+// MARK: - Multi-File Import
+
+struct MultiFileImportResponse: Codable {
+    let success: Bool
+    let mode: String
+    let filesProcessed: Int
+    let totalTransactions: Int
+    let subscriptionsDetected: Int
+    let subscriptions: [Subscription]
+    let totalMonthly: Double
+    let accountId: String?
+    let balance: Double?
 }

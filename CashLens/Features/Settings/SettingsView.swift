@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var isSyncing = false
     @State private var showSignOutAlert = false
     @State private var lastSyncTime: Date?
+    @State private var showSwitchAccountAlert = false
 
     var body: some View {
         NavigationView {
@@ -112,6 +113,14 @@ struct SettingsView: View {
                         Text("\(institutions.count) linked bank\(institutions.count == 1 ? "" : "s")")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                    }
+
+                    // Debug: Show userId to help diagnose issues
+                    if let userId = apiClient.userId {
+                        Text("ID: \(userId)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .textSelection(.enabled)
                     }
                 }
 
@@ -367,40 +376,92 @@ struct SettingsView: View {
 
     // MARK: - Sign Out Section
     private var signOutSection: some View {
-        VStack(spacing: 0) {
-            Button(action: { showSignOutAlert = true }) {
-                HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.red.opacity(0.2), Color.orange.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+        VStack(spacing: 12) {
+            // Switch Account button (for fixing userId mismatch)
+            if apiClient.userId != "6939f55204bf411035728d47" {
+                Button(action: { showSwitchAccountAlert = true }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .frame(width: 44, height: 44)
+                                .frame(width: 44, height: 44)
 
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 18))
-                            .foregroundColor(.red)
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 18))
+                                .foregroundColor(.blue)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Switch to Main Account")
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+
+                            Text("Restore access to all your data")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
                     }
-
-                    Text("Sign Out")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.red)
-
-                    Spacer()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .buttonStyle(PlainButtonStyle())
+                .background(Color(.systemBackground))
+                .cornerRadius(18)
+                .shadow(color: Color.blue.opacity(0.08), radius: 12, x: 0, y: 6)
+                .alert("Switch Account?", isPresented: $showSwitchAccountAlert) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Switch", role: .none) {
+                        switchToMainAccount()
+                    }
+                } message: {
+                    Text("This will switch to your main account with all your linked banks and imported data.")
+                }
             }
-            .buttonStyle(PlainButtonStyle())
+
+            VStack(spacing: 0) {
+                Button(action: { showSignOutAlert = true }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.red.opacity(0.2), Color.orange.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.system(size: 18))
+                                .foregroundColor(.red)
+                        }
+
+                        Text("Sign Out")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.red)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(18)
+            .shadow(color: Color.red.opacity(0.08), radius: 12, x: 0, y: 6)
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(18)
-        .shadow(color: Color.red.opacity(0.08), radius: 12, x: 0, y: 6)
     }
 
     // MARK: - Helper Functions
@@ -454,6 +515,15 @@ struct SettingsView: View {
         UserDefaults.standard.removeObject(forKey: "userId")
     }
 
+    private func switchToMainAccount() {
+        // Switch to the main account with all the data
+        let mainAccountId = "6939f55204bf411035728d47"
+        apiClient.userId = mainAccountId
+        UserDefaults.standard.set(mainAccountId, forKey: "userId")
+        // Reload data
+        Task { await loadInstitutions() }
+    }
+
     private func formatRelativeTime(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -492,6 +562,11 @@ struct ExpandableLinkedBankRow: View {
         let hash = institution.name.hashValue
         let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .cyan]
         return colors[abs(hash) % colors.count]
+    }
+
+    // Helper to check if status indicates a connected account
+    private func isConnectedStatus(_ status: String) -> Bool {
+        return status == "active" || status == "manual"
     }
 
     var body: some View {
@@ -541,12 +616,12 @@ struct ExpandableLinkedBankRow: View {
                     // Status indicator
                     ZStack {
                         Circle()
-                            .fill(institution.status == "active" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                            .fill(isConnectedStatus(institution.status) ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
                             .frame(width: 30, height: 30)
 
-                        Image(systemName: institution.status == "active" ? "checkmark" : "exclamationmark")
+                        Image(systemName: isConnectedStatus(institution.status) ? "checkmark" : "exclamationmark")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(institution.status == "active" ? .green : .orange)
+                            .foregroundColor(isConnectedStatus(institution.status) ? .green : .orange)
                     }
                 }
                 .padding(.horizontal, 16)

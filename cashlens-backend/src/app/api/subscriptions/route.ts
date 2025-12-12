@@ -42,22 +42,85 @@ export async function GET(request: NextRequest) {
     const db = await getDatabase();
     const userObjectId = new ObjectId(userId);
 
+    // First check for stored subscriptions (from CSV import)
+    const storedSubscriptions = await db
+      .collection('detected_subscriptions')
+      .find({ userId: userObjectId })
+      .sort({ lastCharge: -1 })
+      .toArray();
+
+    if (storedSubscriptions.length > 0) {
+      console.log(`[DEBUG] Subscriptions: Found ${storedSubscriptions.length} stored subscriptions for user ${userId}`);
+
+      // Calculate total monthly cost
+      let totalMonthly = 0;
+      const formattedSubs = storedSubscriptions.map((sub) => {
+        let monthlyAmount = sub.amount;
+        switch (sub.frequency) {
+          case 'weekly':
+            monthlyAmount = sub.amount * 4.33;
+            break;
+          case 'bi-weekly':
+            monthlyAmount = sub.amount * 2.17;
+            break;
+          case 'quarterly':
+            monthlyAmount = sub.amount / 3;
+            break;
+          case 'yearly':
+            monthlyAmount = sub.amount / 12;
+            break;
+        }
+        totalMonthly += monthlyAmount;
+
+        return {
+          id: sub._id.toString(),
+          merchantName: sub.merchantName,
+          amount: sub.amount,
+          frequency: sub.frequency,
+          category: sub.category,
+          lastCharge: sub.lastCharge,
+          nextExpected: sub.nextExpected,
+          accountName: sub.accountName,
+          accountMask: sub.accountMask,
+          logoUrl: sub.logoUrl,
+          transactionCount: sub.transactionCount,
+          confidence: sub.confidence,
+          transactions: [], // Stored subscriptions don't have transaction history
+        };
+      });
+
+      return NextResponse.json({
+        subscriptions: formattedSubs,
+        totalMonthly: Math.round(totalMonthly * 100) / 100,
+        count: formattedSubs.length,
+        source: 'stored',
+      });
+    }
+
+    // Fall back to detecting subscriptions from transactions
     // Get transactions from the last N months
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - months);
+
+    // Debug: Check total transactions for this user
+    const totalUserTxns = await db.collection('transactions').countDocuments({ userId: userObjectId });
+    const csvTxns = await db.collection('transactions').countDocuments({ userId: userObjectId, source: 'csv' });
+    console.log(`[DEBUG] Subscriptions: User ${userId} has ${totalUserTxns} total transactions, ${csvTxns} from CSV (detecting from transactions)`);
 
     const transactions = await db
       .collection('transactions')
       .find({
         userId: userObjectId,
         date: { $gte: startDate },
-        pending: false,
+        pending: { $ne: true }, // Changed to $ne: true to include null/undefined/false
         isExcluded: { $ne: true },
         // Only consider outgoing transactions (positive amounts in Plaid = money out)
         amount: { $gt: 0 },
       })
       .sort({ date: -1 })
       .toArray();
+
+    console.log(`[DEBUG] Subscriptions: Found ${transactions.length} transactions after filtering (date >= ${startDate.toISOString()}, amount > 0)`);
 
     // Get account info
     const accountIds = [...new Set(transactions.map((t) => t.accountId?.toString()).filter(Boolean))];
@@ -94,6 +157,12 @@ export async function GET(request: NextRequest) {
       }
       merchantGroups.get(merchant)!.push(t);
     }
+
+    // Debug: Show top merchant groups
+    const topMerchants = Array.from(merchantGroups.entries())
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 10);
+    console.log(`[DEBUG] Subscriptions: Top merchants: ${topMerchants.map(([m, t]) => `${m}(${t.length})`).join(', ')}`);
 
     // Analyze each merchant group for subscription patterns
     const subscriptions: DetectedSubscription[] = [];
@@ -237,6 +306,13 @@ export async function GET(request: NextRequest) {
       subscriptions,
       totalMonthly: Math.round(totalMonthly * 100) / 100,
       count: subscriptions.length,
+      // Debug info
+      _debug: {
+        totalUserTransactions: totalUserTxns,
+        csvTransactions: csvTxns,
+        filteredTransactions: transactions.length,
+        merchantGroups: topMerchants.map(([m, t]) => ({ merchant: m, count: t.length })),
+      },
     });
   } catch (error: any) {
     console.error('Error detecting subscriptions:', error);

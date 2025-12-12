@@ -17,10 +17,10 @@ export async function GET(request: NextRequest) {
     const db = await getDatabase();
     const userObjectId = new ObjectId(userId);
 
-    // Get all plaid items for user (for institution info)
+    // Get all plaid items for user (for institution info) - include manual accounts
     const plaidItems = await db
       .collection('plaid_items')
-      .find({ userId: userObjectId, status: 'active' })
+      .find({ userId: userObjectId, status: { $in: ['active', 'manual'] } })
       .toArray();
 
     const plaidItemMap = new Map(
@@ -150,6 +150,67 @@ export async function PATCH(request: NextRequest) {
     console.error('Error updating account visibility:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to update account' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { userId, name, type, subtype, institutionName } = body;
+
+    if (!userId || !name || !type || !institutionName) {
+      return NextResponse.json(
+        { error: 'userId, name, type, and institutionName are required' },
+        { status: 400 }
+      );
+    }
+
+    const db = await getDatabase();
+    const userObjectId = new ObjectId(userId);
+
+    // Create a "manual" plaid_item (synthetic, no accessToken)
+    const plaidItemResult = await db.collection('plaid_items').insertOne({
+      userId: userObjectId,
+      itemId: `manual_${Date.now()}`,
+      institutionId: null,
+      institutionName: institutionName,
+      institutionLogo: null,
+      institutionColor: null,
+      status: 'manual',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Create the account linked to this manual item
+    const accountResult = await db.collection('accounts').insertOne({
+      userId: userObjectId,
+      plaidItemId: plaidItemResult.insertedId,
+      accountId: `manual_${Date.now()}`,
+      name,
+      officialName: name,
+      type,
+      subtype: subtype || null,
+      mask: null,
+      currentBalance: 0,
+      availableBalance: null,
+      creditLimit: null,
+      isoCurrencyCode: 'USD',
+      isHidden: false,
+      createdAt: new Date(),
+      lastUpdatedAt: new Date(),
+    });
+
+    return NextResponse.json({
+      success: true,
+      accountId: accountResult.insertedId.toString(),
+      plaidItemId: plaidItemResult.insertedId.toString(),
+    });
+  } catch (error: any) {
+    console.error('Error creating manual account:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to create manual account' },
       { status: 500 }
     );
   }

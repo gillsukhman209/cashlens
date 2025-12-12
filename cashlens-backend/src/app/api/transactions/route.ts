@@ -25,8 +25,13 @@ export async function GET(request: NextRequest) {
     const db = await getDatabase();
     const userObjectId = new ObjectId(userId);
 
-    // Build query
-    const query: any = { userId: userObjectId, isExcluded: false };
+    // Debug: Count all transactions for this user to help diagnose issues
+    const debugTotalForUser = await db.collection('transactions').countDocuments({ userId: userObjectId });
+    const debugCSVCount = await db.collection('transactions').countDocuments({ userId: userObjectId, source: 'csv' });
+    console.log(`[DEBUG] User ${userId}: Total transactions = ${debugTotalForUser}, CSV imported = ${debugCSVCount}`);
+
+    // Build query - use $ne: true to include transactions where isExcluded is false, null, or missing
+    const query: any = { userId: userObjectId, isExcluded: { $ne: true } };
 
     // Date range filter
     if (startDate || endDate) {
@@ -123,6 +128,12 @@ export async function GET(request: NextRequest) {
       limit,
       offset,
       hasMore: offset + transactions.length < total,
+      // Debug info - remove after fixing
+      _debug: {
+        totalForUser: debugTotalForUser,
+        csvCount: debugCSVCount,
+        queryUserId: userId,
+      },
     });
   } catch (error: any) {
     console.error('Error fetching transactions:', error);

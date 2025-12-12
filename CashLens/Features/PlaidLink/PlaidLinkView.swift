@@ -7,12 +7,13 @@ struct PlaidLinkView: View {
     @State private var error: String?
     @State private var handler: Handler?
     @State private var showAccountSelection = false
+    @State private var showImportSheet = false
     @Binding var hasLinkedBank: Bool
 
     private let features = [
         ("chart.bar.fill", "Track Spending", "See where your money goes", Color.orange),
         ("building.columns.fill", "Multiple Banks", "Connect all your accounts", Color.blue),
-        ("lock.shield.fill", "Bank Security", "256-bit encryption", Color.green)
+        ("doc.badge.plus", "Import Statements", "Apple Card & CSV files", Color.purple)
     ]
 
     var body: some View {
@@ -88,6 +89,13 @@ struct PlaidLinkView: View {
             AccountSelectionView(isPresented: $showAccountSelection, hasLinkedBank: $hasLinkedBank)
                 .environmentObject(apiClient)
         }
+        .sheet(isPresented: $showImportSheet) {
+            StatementImportView(onComplete: {
+                // After successful import, let user into the app
+                hasLinkedBank = true
+            })
+            .environmentObject(apiClient)
+        }
     }
 
     // MARK: - Bank Icon Section
@@ -135,11 +143,11 @@ struct PlaidLinkView: View {
     // MARK: - Title Section
     private var titleSection: some View {
         VStack(spacing: 12) {
-            Text("Connect Your Bank")
+            Text("Add Your Accounts")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
 
-            Text("Link your accounts to see all your transactions, balances, and spending insights.")
+            Text("Connect your bank or import statements to see all your transactions and spending insights.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -178,37 +186,84 @@ struct PlaidLinkView: View {
 
     // MARK: - Connect Button
     private var connectButton: some View {
-        Button(action: {
-            Task { await openPlaidLink() }
-        }) {
-            HStack(spacing: 10) {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                } else {
-                    Image(systemName: "link")
+        VStack(spacing: 12) {
+            // Connect Bank Button
+            Button(action: {
+                Task { await openPlaidLink() }
+            }) {
+                HStack(spacing: 10) {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                        Text("Connect Bank Account")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 58)
+                .background(
+                    LinearGradient(
+                        colors: isLoading ? [.gray, .gray] : [
+                            Color(red: 0.3, green: 0.5, blue: 1.0),
+                            Color(red: 0.5, green: 0.3, blue: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundColor(.white)
+                .cornerRadius(18)
+                .shadow(color: isLoading ? .clear : .blue.opacity(0.4), radius: 15, x: 0, y: 8)
+            }
+            .disabled(isLoading)
+
+            // Divider with "or"
+            HStack {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+                Text("or")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(height: 1)
+            }
+            .padding(.vertical, 4)
+
+            // Import Statement Button
+            Button(action: {
+                showImportSheet = true
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.badge.plus")
                         .font(.system(size: 18, weight: .semibold))
-                    Text("Connect Bank Account")
+                    Text("Import Statement")
                         .fontWeight(.semibold)
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 58)
-            .background(
-                LinearGradient(
-                    colors: isLoading ? [.gray, .gray] : [
-                        Color(red: 0.3, green: 0.5, blue: 1.0),
-                        Color(red: 0.5, green: 0.3, blue: 1.0)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
+                .frame(maxWidth: .infinity)
+                .frame(height: 58)
+                .background(Color(.systemBackground))
+                .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+                .cornerRadius(18)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(0.5), Color.blue.opacity(0.5)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 2
+                        )
                 )
-            )
-            .foregroundColor(.white)
-            .cornerRadius(18)
-            .shadow(color: isLoading ? .clear : .blue.opacity(0.4), radius: 15, x: 0, y: 8)
+            }
+            .disabled(isLoading)
         }
-        .disabled(isLoading)
         .padding(.bottom, 16)
     }
 
@@ -219,17 +274,13 @@ struct PlaidLinkView: View {
                 .font(.caption)
                 .foregroundColor(.green)
 
-            Text("Secured by ")
+            Text("Bank connections secured by ")
                 .font(.caption)
                 .foregroundColor(.secondary)
             +
             Text("Plaid")
                 .font(.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            +
-            Text(". Your credentials are never stored.")
-                .font(.caption)
                 .foregroundColor(.secondary)
         }
         .multilineTextAlignment(.center)

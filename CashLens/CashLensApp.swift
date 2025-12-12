@@ -50,10 +50,25 @@ struct RootView: View {
     private func checkStatus() async {
         if apiClient.userId != nil {
             hasUser = true
+
+            // Check if user has completed setup (either linked bank or imported statements)
+            let hasCompletedSetup = UserDefaults.standard.bool(forKey: "hasCompletedSetup")
+
+            if hasCompletedSetup {
+                await MainActor.run {
+                    hasLinkedBank = true
+                    isCheckingStatus = false
+                }
+                return
+            }
+
             do {
                 let response = try await apiClient.getInstitutions()
                 await MainActor.run {
                     hasLinkedBank = !response.institutions.isEmpty
+                    if hasLinkedBank {
+                        UserDefaults.standard.set(true, forKey: "hasCompletedSetup")
+                    }
                     isCheckingStatus = false
                 }
             } catch {

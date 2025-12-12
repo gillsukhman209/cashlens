@@ -7,6 +7,8 @@ struct AccountsView: View {
     @State private var isLoading = true
     @State private var error: String?
     @State private var showAddBank = false
+    @State private var showImportSheet = false
+    @State private var showAddOptions = false
     @State private var institutionToDelete: LinkedInstitution?
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
@@ -347,53 +349,106 @@ struct AccountsView: View {
 
     // MARK: - Add Bank Button
     private var addBankButton: some View {
-        Button(action: { showAddBank = true }) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+        VStack(spacing: 12) {
+            // Link with Plaid option
+            Button(action: { showAddBank = true }) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
-                        .frame(width: 46, height: 46)
+                            .frame(width: 46, height: 46)
 
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.blue, .purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
-                }
+                    }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Link Another Bank")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Link Bank Account")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
 
-                    Text("Add more accounts to track")
-                        .font(.caption)
+                        Text("Connect securely with Plaid")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
+                .padding(16)
+                .background(Color(.systemBackground))
+                .cornerRadius(18)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
             }
-            .padding(16)
-            .background(Color(.systemBackground))
-            .cornerRadius(18)
-            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+            .buttonStyle(PlainButtonStyle())
+
+            // Import Statement option
+            Button(action: { showImportSheet = true }) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.gray.opacity(0.3), Color.white.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 46, height: 46)
+
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Import Statement")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+                        Text("Apple Card, CSV files")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(16)
+                .background(Color(.systemBackground))
+                .cornerRadius(18)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+            }
+            .buttonStyle(PlainButtonStyle())
         }
-        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showImportSheet) {
+            StatementImportView()
+                .environmentObject(apiClient)
+                .onDisappear {
+                    Task { await loadData() }
+                }
+        }
     }
 
     // MARK: - Linked Banks Section
@@ -500,6 +555,11 @@ struct LinkedBankRow: View {
         return colors[abs(hash) % colors.count]
     }
 
+    // Helper to check if status indicates a connected account
+    private var isConnected: Bool {
+        institution.status == "active" || institution.status == "manual"
+    }
+
     var body: some View {
         HStack(spacing: 14) {
             // Bank Icon
@@ -532,12 +592,12 @@ struct LinkedBankRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    if institution.status == "active" {
+                    if isConnected {
                         HStack(spacing: 4) {
                             Circle()
                                 .fill(Color.green)
                                 .frame(width: 6, height: 6)
-                            Text("Connected")
+                            Text(institution.status == "manual" ? "Manual" : "Connected")
                                 .font(.caption)
                                 .foregroundColor(.green)
                         }
