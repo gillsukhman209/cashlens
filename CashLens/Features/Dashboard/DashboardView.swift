@@ -19,6 +19,32 @@ struct DashboardView: View {
         visibleAccounts.reduce(0) { $0 + $1.currentBalance }
     }
 
+    // Total savings = checking + savings accounts only
+    private var totalSavings: Double {
+        visibleAccounts
+            .filter { $0.type == "depository" }
+            .reduce(0) { $0 + $1.currentBalance }
+    }
+
+    // Total credit card debt
+    private var totalCreditDebt: Double {
+        visibleAccounts
+            .filter { $0.type == "credit" }
+            .reduce(0) { $0 + $1.currentBalance }
+    }
+
+    // Total investments
+    private var totalInvestments: Double {
+        visibleAccounts
+            .filter { $0.type == "investment" }
+            .reduce(0) { $0 + $1.currentBalance }
+    }
+
+    // True net worth = savings + investments - credit debt
+    private var trueNetWorth: Double {
+        totalSavings + totalInvestments - totalCreditDebt
+    }
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -64,11 +90,12 @@ struct DashboardView: View {
 
     // MARK: - Net Worth Section
     private var netWorthSection: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 16) {
+            // Main Savings Card
             VStack(spacing: 16) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Total Balance")
+                        Text("Your Savings")
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.white.opacity(0.85))
@@ -77,20 +104,24 @@ struct DashboardView: View {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
-                            Text(formatCurrency(visibleNetWorth))
+                            Text(formatCurrency(totalSavings))
                                 .font(.system(size: 36, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                         }
+
+                        Text("Checking & Savings")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                     Spacer()
 
-                    // Trend Indicator
+                    // Icon
                     ZStack {
                         Circle()
                             .fill(Color.white.opacity(0.2))
                             .frame(width: 50, height: 50)
 
-                        Image(systemName: visibleNetWorth >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        Image(systemName: "banknote.fill")
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                     }
@@ -101,28 +132,40 @@ struct DashboardView: View {
                     .fill(Color.white.opacity(0.2))
                     .frame(height: 1)
 
-                // Accounts Count
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "building.columns.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.75))
-
-                        Text("\(visibleAccounts.count) accounts")
+                // Bottom row with credit debt and net worth
+                HStack(spacing: 24) {
+                    // Credit Card Debt
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "creditcard.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                            Text("Credit Debt")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        Text(totalCreditDebt > 0 ? "-\(formatCurrency(totalCreditDebt))" : "$0.00")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.75))
+                            .fontWeight(.semibold)
+                            .foregroundColor(totalCreditDebt > 0 ? Color(red: 1.0, green: 0.6, blue: 0.6) : .white)
                     }
 
                     Spacer()
 
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-
-                        Text("Live")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
+                    // Net Worth
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("Net Worth")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
+                            Image(systemName: trueNetWorth >= 0 ? "arrow.up.right" : "arrow.down.right")
+                                .font(.system(size: 10))
+                                .foregroundColor(trueNetWorth >= 0 ? .green : .red)
+                        }
+                        Text(formatCurrency(trueNetWorth))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
                     }
                 }
             }
@@ -130,15 +173,54 @@ struct DashboardView: View {
             .background(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.35, green: 0.45, blue: 0.95),
-                        Color(red: 0.55, green: 0.35, blue: 0.95)
+                        Color(red: 0.2, green: 0.6, blue: 0.4),
+                        Color(red: 0.1, green: 0.5, blue: 0.5)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .cornerRadius(24)
-            .shadow(color: Color.purple.opacity(0.3), radius: 20, x: 0, y: 10)
+            .shadow(color: Color.green.opacity(0.3), radius: 20, x: 0, y: 10)
+
+            // Credit Card Summary Card (only show if there's credit debt)
+            if totalCreditDebt > 0 {
+                HStack {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.red.opacity(0.2))
+                                .frame(width: 44, height: 44)
+
+                            Image(systemName: "creditcard.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.red)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Credit Cards Owed")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+                            Text("Pay off to increase net worth")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Text("-\(formatCurrency(totalCreditDebt))")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.red)
+                }
+                .padding(16)
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+            }
         }
     }
 

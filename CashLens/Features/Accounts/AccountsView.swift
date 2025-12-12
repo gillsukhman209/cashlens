@@ -14,16 +14,60 @@ struct AccountsView: View {
         return accounts.filter { !hiddenIds.contains($0.id) }
     }
 
-    // Group accounts by institution
-    var groupedAccounts: [(String, [Account])] {
-        let grouped = Dictionary(grouping: visibleAccounts) { account in
+    // Depository accounts (checking & savings)
+    private var depositoryAccounts: [Account] {
+        visibleAccounts.filter { $0.type == "depository" }
+    }
+
+    // Credit card accounts
+    private var creditAccounts: [Account] {
+        visibleAccounts.filter { $0.type == "credit" }
+    }
+
+    // Investment accounts
+    private var investmentAccounts: [Account] {
+        visibleAccounts.filter { $0.type == "investment" }
+    }
+
+    // Group depository accounts by institution
+    private var depositoryByInstitution: [(String, [Account])] {
+        let grouped = Dictionary(grouping: depositoryAccounts) { account in
             account.institution?.name ?? "Unknown Bank"
         }
         return grouped.sorted { $0.key < $1.key }
     }
 
-    var totalBalance: Double {
-        visibleAccounts.reduce(0) { $0 + $1.currentBalance }
+    // Group credit accounts by institution
+    private var creditByInstitution: [(String, [Account])] {
+        let grouped = Dictionary(grouping: creditAccounts) { account in
+            account.institution?.name ?? "Unknown Bank"
+        }
+        return grouped.sorted { $0.key < $1.key }
+    }
+
+    // Group investment accounts by institution
+    private var investmentByInstitution: [(String, [Account])] {
+        let grouped = Dictionary(grouping: investmentAccounts) { account in
+            account.institution?.name ?? "Unknown Bank"
+        }
+        return grouped.sorted { $0.key < $1.key }
+    }
+
+    // Totals
+    var totalSavings: Double {
+        depositoryAccounts.reduce(0) { $0 + $1.currentBalance }
+    }
+
+    var totalCreditDebt: Double {
+        creditAccounts.reduce(0) { $0 + $1.currentBalance }
+    }
+
+    var totalInvestments: Double {
+        investmentAccounts.reduce(0) { $0 + $1.currentBalance }
+    }
+
+    var netWorth: Double {
+        totalSavings + totalInvestments - totalCreditDebt
     }
 
     var body: some View {
@@ -179,17 +223,48 @@ struct AccountsView: View {
     // MARK: - Accounts Content
     private var accountsContent: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 20) {
-                // Total Balance Header
-                totalBalanceCard
-
-                // Accounts by Institution
-                ForEach(groupedAccounts, id: \.0) { institutionName, institutionAccounts in
-                    ColorfulInstitutionSection(
-                        name: institutionName,
-                        accounts: institutionAccounts
+            VStack(spacing: 24) {
+                // Your Money Section (Checking & Savings)
+                if !depositoryAccounts.isEmpty {
+                    AccountTypeSection(
+                        title: "Your Money",
+                        subtitle: "Checking & Savings",
+                        total: totalSavings,
+                        icon: "banknote.fill",
+                        gradientColors: [Color(red: 0.2, green: 0.7, blue: 0.5), Color(red: 0.1, green: 0.5, blue: 0.6)],
+                        accountsByInstitution: depositoryByInstitution,
+                        isDebt: false
                     )
                 }
+
+                // Credit Cards Section
+                if !creditAccounts.isEmpty {
+                    AccountTypeSection(
+                        title: "Credit Cards",
+                        subtitle: "Total Owed",
+                        total: totalCreditDebt,
+                        icon: "creditcard.fill",
+                        gradientColors: [Color(red: 0.9, green: 0.3, blue: 0.3), Color(red: 0.95, green: 0.5, blue: 0.3)],
+                        accountsByInstitution: creditByInstitution,
+                        isDebt: true
+                    )
+                }
+
+                // Investments Section
+                if !investmentAccounts.isEmpty {
+                    AccountTypeSection(
+                        title: "Investments",
+                        subtitle: "Total Value",
+                        total: totalInvestments,
+                        icon: "chart.line.uptrend.xyaxis",
+                        gradientColors: [Color.purple, Color.pink],
+                        accountsByInstitution: investmentByInstitution,
+                        isDebt: false
+                    )
+                }
+
+                // Net Worth Summary
+                netWorthCard
 
                 // Add Bank Button
                 addBankButton
@@ -202,73 +277,30 @@ struct AccountsView: View {
         }
     }
 
-    // MARK: - Total Balance Card
-    private var totalBalanceCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Total Balance")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.85))
+    // MARK: - Net Worth Card
+    private var netWorthCard: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Net Worth")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
 
-                    Text(formatCurrency(totalBalance))
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                }
-                Spacer()
-
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(width: 50, height: 50)
-
-                    Image(systemName: "chart.pie.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                }
+                Text("Assets minus liabilities")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.7))
             }
 
-            Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
+            Spacer()
 
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "creditcard.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.75))
-
-                    Text("\(visibleAccounts.count) accounts")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.75))
-                }
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Image(systemName: "building.2.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.75))
-
-                    Text("\(groupedAccounts.count) banks")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.75))
-                }
-            }
+            Text(formatCurrency(netWorth))
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(netWorth >= 0 ? Color(red: 0.2, green: 0.7, blue: 0.5) : .red)
         }
-        .padding(24)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.2, green: 0.7, blue: 0.5),
-                    Color(red: 0.1, green: 0.5, blue: 0.6)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .cornerRadius(24)
-        .shadow(color: Color.green.opacity(0.3), radius: 20, x: 0, y: 10)
+        .padding(20)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
     }
 
     // MARK: - Add Bank Button
@@ -344,6 +376,135 @@ struct AccountsView: View {
                 self.error = error.localizedDescription
                 self.isLoading = false
             }
+        }
+    }
+
+    private func formatCurrency(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: amount)) ?? "$0.00"
+    }
+}
+
+// MARK: - Account Type Section
+struct AccountTypeSection: View {
+    let title: String
+    let subtitle: String
+    let total: Double
+    let icon: String
+    let gradientColors: [Color]
+    let accountsByInstitution: [(String, [Account])]
+    let isDebt: Bool
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Section Header Card
+            VStack(spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(isDebt && total > 0 ? "-\(formatCurrency(total))" : formatCurrency(total))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+
+                        let accountCount = accountsByInstitution.reduce(0) { $0 + $1.1.count }
+                        Text("\(accountCount) account\(accountCount == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+
+                HStack {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 40, height: 40)
+
+                        Image(systemName: icon)
+                            .font(.system(size: 18))
+                            .foregroundColor(.white)
+                    }
+
+                    Spacer()
+
+                    Text("\(accountsByInstitution.count) institution\(accountsByInstitution.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: gradientColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(20)
+            .shadow(color: gradientColors[0].opacity(0.3), radius: 15, x: 0, y: 8)
+
+            // Accounts grouped by institution
+            VStack(spacing: 0) {
+                ForEach(Array(accountsByInstitution.enumerated()), id: \.element.0) { instIndex, institutionData in
+                    let (institutionName, accounts) = institutionData
+
+                    // Institution Header
+                    HStack {
+                        HStack(spacing: 10) {
+                            Image(systemName: "building.columns.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+
+                            Text(institutionName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+                        }
+
+                        Spacer()
+
+                        let instTotal = accounts.reduce(0) { $0 + $1.currentBalance }
+                        Text(isDebt && instTotal > 0 ? "-\(formatCurrency(instTotal))" : formatCurrency(instTotal))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(isDebt ? .red : Color(red: 0.1, green: 0.1, blue: 0.2))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemGray6))
+
+                    // Accounts for this institution
+                    ForEach(Array(accounts.enumerated()), id: \.element.id) { accIndex, account in
+                        ColorfulAccountCardRow(account: account)
+
+                        if accIndex < accounts.count - 1 {
+                            Divider()
+                                .padding(.leading, 72)
+                        }
+                    }
+
+                    if instIndex < accountsByInstitution.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
         }
     }
 
