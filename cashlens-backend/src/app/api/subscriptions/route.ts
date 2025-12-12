@@ -361,8 +361,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Remove internal fields before returning
-    const finalSubscriptions = combinedSubscriptions.map(({ normalizedName, ...rest }) => rest);
+    // Include subscriptionKey for updates (normalized merchant name)
+    const finalSubscriptions = combinedSubscriptions.map(({ normalizedName, ...rest }) => ({
+      ...rest,
+      subscriptionKey: normalizedName, // Used for edit/delete API calls
+    }));
 
     console.log(`[DEBUG] Subscriptions: Returning ${finalSubscriptions.length} combined subscriptions (${csvSubscriptions.length} CSV + ${plaidSubscriptions.length} Plaid, merged)`);
 

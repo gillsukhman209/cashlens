@@ -189,8 +189,8 @@ struct SubscriptionDetailView: View {
         // Parse amount
         let amount = Double(editedAmount) ?? subscription.amount
 
-        // Get the subscription key (normalized merchant name)
-        let subscriptionKey = subscription.merchantName.lowercased().trimmingCharacters(in: .whitespaces)
+        // Use the subscriptionKey from API (preferred) or fall back to normalizing the merchant name
+        let subscriptionKey = subscription.subscriptionKey ?? normalizeSubscriptionKey(subscription.merchantName)
 
         do {
             try await apiClient.updateSubscription(
@@ -219,8 +219,8 @@ struct SubscriptionDetailView: View {
         isDeleting = true
         deleteError = nil
 
-        // Get the subscription key (normalized merchant name)
-        let subscriptionKey = subscription.merchantName.lowercased().trimmingCharacters(in: .whitespaces)
+        // Use the subscriptionKey from API (preferred) or fall back to normalizing the merchant name
+        let subscriptionKey = subscription.subscriptionKey ?? normalizeSubscriptionKey(subscription.merchantName)
 
         do {
             try await apiClient.deleteSubscription(subscriptionKey: subscriptionKey)
@@ -449,6 +449,18 @@ struct SubscriptionDetailView: View {
     }
 
     // MARK: - Helpers
+
+    // Normalize subscription key to match backend normalization:
+    // lowercase, trim whitespace, replace multiple spaces with single space
+    private func normalizeSubscriptionKey(_ name: String) -> String {
+        return name
+            .lowercased()
+            .trimmingCharacters(in: .whitespaces)
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     private var categoryColor: Color {
         guard let category = subscription.category?.lowercased() else { return .blue }
 
@@ -607,6 +619,7 @@ struct TransactionHistoryRow: View {
             SubscriptionTransaction(id: "1", amount: 15.99, date: Date(), accountName: "Chase Checking", accountMask: "1234"),
             SubscriptionTransaction(id: "2", amount: 15.99, date: Calendar.current.date(byAdding: .month, value: -1, to: Date())!, accountName: "Chase Checking", accountMask: "1234"),
             SubscriptionTransaction(id: "3", amount: 15.99, date: Calendar.current.date(byAdding: .month, value: -2, to: Date())!, accountName: "Chase Checking", accountMask: "1234")
-        ]
+        ],
+        subscriptionKey: "netflix"
     ))
 }

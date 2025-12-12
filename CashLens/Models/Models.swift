@@ -320,6 +320,7 @@ struct Subscription: Codable, Identifiable {
     let transactionCount: Int
     let confidence: Double
     let transactions: [SubscriptionTransaction]?
+    let subscriptionKey: String? // Normalized key for edit/delete operations
 
     var displayAmount: String {
         let formatter = NumberFormatter()
