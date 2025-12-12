@@ -6,6 +6,44 @@ struct SubscriptionsView: View {
     @State private var totalMonthly: Double = 0
     @State private var isLoading = true
     @State private var error: String?
+    @State private var selectedAccount: String? = nil // nil means "All Accounts"
+
+    // Get unique accounts from subscriptions
+    private var uniqueAccounts: [String] {
+        let accounts = subscriptions.compactMap { sub -> String? in
+            if let name = sub.accountName {
+                if let mask = sub.accountMask {
+                    return "\(name) •••• \(mask)"
+                }
+                return name
+            }
+            return nil
+        }
+        return Array(Set(accounts)).sorted()
+    }
+
+    // Filter subscriptions by selected account
+    private var filteredSubscriptions: [Subscription] {
+        guard let selectedAccount = selectedAccount else {
+            return subscriptions
+        }
+        return subscriptions.filter { sub in
+            if let name = sub.accountName {
+                let fullName = sub.accountMask != nil ? "\(name) •••• \(sub.accountMask!)" : name
+                return fullName == selectedAccount
+            }
+            return false
+        }
+    }
+
+    // Calculate total monthly for filtered subscriptions
+    private var filteredTotalMonthly: Double {
+        var total = 0.0
+        for sub in filteredSubscriptions {
+            total += sub.monthlyEquivalent
+        }
+        return total
+    }
 
     var body: some View {
         NavigationView {
@@ -22,18 +60,23 @@ struct SubscriptionsView: View {
                 )
                 .ignoresSafeArea()
 
-                if isLoading {
-                    loadingView
-                } else if subscriptions.isEmpty {
-                    emptyState
-                } else {
-                    subscriptionsList
+                VStack(spacing: 0) {
+                    // Account Filter Bar
+                    if !subscriptions.isEmpty && uniqueAccounts.count > 1 {
+                        accountFilterBar
+                            .padding(.top, 8)
+                    }
+
+                    if isLoading {
+                        loadingView
+                    } else if subscriptions.isEmpty {
+                        emptyState
+                    } else {
+                        subscriptionsList
+                    }
                 }
             }
             .navigationTitle("Subscriptions")
-            .refreshable {
-                await loadSubscriptions()
-            }
             .task {
                 await loadSubscriptions()
             }
@@ -132,6 +175,9 @@ struct SubscriptionsView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
         }
+        .refreshable {
+            await loadSubscriptions()
+        }
     }
 
     // MARK: - Total Cost Card
@@ -139,15 +185,15 @@ struct SubscriptionsView: View {
         VStack(spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Monthly Subscriptions")
+                    Text(selectedAccount != nil ? "Account Subscriptions" : "Monthly Subscriptions")
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.85))
 
-                    Text(formatCurrency(totalMonthly))
+                    Text(formatCurrency(filteredTotalMonthly))
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("\(subscriptions.count) recurring payment\(subscriptions.count == 1 ? "" : "s")")
+                    Text("\(filteredSubscriptions.count) recurring payment\(filteredSubscriptions.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -187,10 +233,30 @@ struct SubscriptionsView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.75))
 
-                    Text(formatCurrency(totalMonthly * 12) + "/year")
+                    Text(formatCurrency(filteredTotalMonthly * 12) + "/year")
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(.white.opacity(0.85))
+                }
+            }
+
+            // Show overall total when filtering by account
+            if selectedAccount != nil {
+                Rectangle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(height: 1)
+
+                HStack {
+                    Text("All accounts total:")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.75))
+
+                    Spacer()
+
+                    Text(formatCurrency(totalMonthly) + "/mo")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.9))
                 }
             }
         }
@@ -211,14 +277,26 @@ struct SubscriptionsView: View {
 
     // MARK: - Info Section
     private var infoSection: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "info.circle.fill")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "info.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
-            Text("Subscriptions are detected automatically based on recurring transaction patterns.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                Text("Subscriptions are detected automatically based on recurring transaction patterns.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+
+                Text("Orange amounts show the monthly equivalent for non-monthly subscriptions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.top, 8)
@@ -226,7 +304,40 @@ struct SubscriptionsView: View {
 
     // Sort subscriptions by last charge date (newest first)
     private var sortedSubscriptions: [Subscription] {
-        subscriptions.sorted { $0.lastCharge > $1.lastCharge }
+        filteredSubscriptions.sorted { $0.lastCharge > $1.lastCharge }
+    }
+
+    // MARK: - Account Filter Bar
+    private var accountFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                // All Accounts option
+                AccountFilterPill(
+                    title: "All Accounts",
+                    isSelected: selectedAccount == nil,
+                    color: .blue
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedAccount = nil
+                    }
+                }
+
+                // Individual accounts
+                ForEach(uniqueAccounts, id: \.self) { account in
+                    AccountFilterPill(
+                        title: account,
+                        isSelected: selectedAccount == account,
+                        color: .purple
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedAccount = account
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
     }
 
     // MARK: - Data Loading
@@ -260,6 +371,7 @@ struct SubscriptionsView: View {
 // MARK: - Subscription Row
 struct SubscriptionRow: View {
     let subscription: Subscription
+    @State private var showDetail = false
 
     var categoryColor: Color {
         guard let category = subscription.category?.lowercased() else { return .blue }
@@ -282,6 +394,18 @@ struct SubscriptionRow: View {
     }
 
     var body: some View {
+        Button(action: {
+            showDetail = true
+        }) {
+            rowContent
+        }
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showDetail) {
+            SubscriptionDetailView(subscription: subscription)
+        }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 14) {
             // Icon
             ZStack {
@@ -323,18 +447,29 @@ struct SubscriptionRow: View {
 
             Spacer()
 
-            // Amount
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(subscription.displayAmount)
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+            // Amount & Chevron
+            HStack(spacing: 12) {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(subscription.displayAmount)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
 
-                if let nextExpected = subscription.nextExpected {
-                    Text("Next: \(formatDate(nextExpected))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Show monthly equivalent if different from charge amount
+                    if subscription.frequency != "monthly" {
+                        Text("\(subscription.displayMonthlyEquivalent)/mo")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    } else if let nextExpected = subscription.nextExpected {
+                        Text("Next: \(formatDate(nextExpected))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
             }
         }
         .padding(.horizontal, 16)
@@ -345,6 +480,41 @@ struct SubscriptionRow: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Account Filter Pill
+struct AccountFilterPill: View {
+    let title: String
+    let isSelected: Bool
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(isSelected ? .white : Color(red: 0.1, green: 0.1, blue: 0.2))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    Group {
+                        if isSelected {
+                            LinearGradient(
+                                colors: [color, color.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        } else {
+                            Color(.systemBackground)
+                        }
+                    }
+                )
+                .cornerRadius(20)
+                .shadow(color: isSelected ? color.opacity(0.3) : Color.black.opacity(0.05), radius: isSelected ? 8 : 4, x: 0, y: 3)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

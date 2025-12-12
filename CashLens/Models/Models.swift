@@ -249,6 +249,7 @@ struct Subscription: Codable, Identifiable {
     let logoUrl: String?
     let transactionCount: Int
     let confidence: Double
+    let transactions: [SubscriptionTransaction]?
 
     var displayAmount: String {
         let formatter = NumberFormatter()
@@ -293,10 +294,43 @@ struct Subscription: Codable, Identifiable {
             return "repeat.circle"
         }
     }
+
+    // Calculate monthly equivalent based on frequency
+    var monthlyEquivalent: Double {
+        switch frequency {
+        case "weekly":
+            return amount * 4.33
+        case "bi-weekly":
+            return amount * 2.17
+        case "monthly":
+            return amount
+        case "quarterly":
+            return amount / 3
+        case "yearly":
+            return amount / 12
+        default:
+            return amount
+        }
+    }
+
+    var displayMonthlyEquivalent: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: monthlyEquivalent)) ?? "$\(monthlyEquivalent)"
+    }
 }
 
 struct SubscriptionsResponse: Codable {
     let subscriptions: [Subscription]
     let totalMonthly: Double
     let count: Int
+}
+
+struct SubscriptionTransaction: Codable, Identifiable {
+    let id: String
+    let amount: Double
+    let date: Date
+    let accountName: String?
+    let accountMask: String?
 }

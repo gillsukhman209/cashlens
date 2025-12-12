@@ -99,9 +99,6 @@ struct TransactionsView: View {
             }
             .navigationTitle("Transactions")
             .searchable(text: $searchText, prompt: "Search transactions")
-            .refreshable {
-                await refresh()
-            }
             .task {
                 if transactions.isEmpty {
                     await loadTransactions()
@@ -303,6 +300,9 @@ struct TransactionsView: View {
             }
             .padding(.top, 8)
         }
+        .refreshable {
+            await refresh()
+        }
     }
 
     // MARK: - Data Loading
@@ -404,8 +404,21 @@ struct ColorfulFilterPill: View {
 // MARK: - Colorful Transaction List Item
 struct ColorfulTransactionListItem: View {
     let transaction: Transaction
+    @State private var showDetail = false
 
     var body: some View {
+        Button(action: {
+            showDetail = true
+        }) {
+            transactionContent
+        }
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showDetail) {
+            TransactionDetailView(transaction: transaction)
+        }
+    }
+
+    private var transactionContent: some View {
         HStack(spacing: 14) {
             // Category Icon with gradient
             ZStack {
@@ -452,15 +465,21 @@ struct ColorfulTransactionListItem: View {
 
             Spacer()
 
-            // Amount
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(transaction.isIncome ? "+\(transaction.displayAmount)" : "-\(transaction.displayAmount)")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(transaction.isIncome ? .green : Color(red: 0.1, green: 0.1, blue: 0.2))
+            // Amount & Chevron
+            HStack(spacing: 10) {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(transaction.isIncome ? "+\(transaction.displayAmount)" : "-\(transaction.displayAmount)")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(transaction.isIncome ? .green : Color(red: 0.1, green: 0.1, blue: 0.2))
 
-                Text(formatTime(transaction.date))
-                    .font(.caption)
+                    Text(formatTime(transaction.date))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.secondary)
             }
         }

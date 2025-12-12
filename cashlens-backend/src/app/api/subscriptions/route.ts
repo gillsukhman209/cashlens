@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDatabase } from '@/lib/mongodb';
 
+interface SubscriptionTransaction {
+  id: string;
+  amount: number;
+  date: Date;
+  accountName: string | null;
+  accountMask: string | null;
+}
+
 interface DetectedSubscription {
   id: string;
   merchantName: string;
@@ -15,6 +23,7 @@ interface DetectedSubscription {
   logoUrl: string | null;
   transactionCount: number;
   confidence: number;
+  transactions: SubscriptionTransaction[];
 }
 
 export async function GET(request: NextRequest) {
@@ -168,6 +177,20 @@ export async function GET(request: NextRequest) {
         .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(' ');
 
+      // Build transaction history (sorted by date, newest first)
+      const transactionHistory: SubscriptionTransaction[] = txns
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map((t) => {
+          const txnAccount = t.accountId ? accountMap.get(t.accountId.toString()) : null;
+          return {
+            id: t._id.toString(),
+            amount: t.amount,
+            date: new Date(t.date),
+            accountName: txnAccount?.name || null,
+            accountMask: txnAccount?.mask || null,
+          };
+        });
+
       subscriptions.push({
         id: `sub_${merchant.replace(/\s+/g, '_').substring(0, 20)}`,
         merchantName: displayName,
@@ -181,6 +204,7 @@ export async function GET(request: NextRequest) {
         logoUrl: lastTxn.logoUrl || null,
         transactionCount: txns.length,
         confidence,
+        transactions: transactionHistory,
       });
     }
 
