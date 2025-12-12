@@ -185,6 +185,11 @@ struct DashboardView: View {
         }
     }
 
+    // Sort transactions by date (newest first)
+    private var sortedTransactions: [Transaction] {
+        transactions.sorted { $0.date > $1.date }
+    }
+
     // MARK: - Recent Activity Section
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -213,13 +218,13 @@ struct DashboardView: View {
                     ForEach(0..<3, id: \.self) { _ in
                         TransactionSkeletonRow()
                     }
-                } else if transactions.isEmpty {
+                } else if sortedTransactions.isEmpty {
                     emptyTransactionsView
                 } else {
-                    ForEach(Array(transactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
+                    ForEach(Array(sortedTransactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
                         ColorfulTransactionRow(transaction: transaction)
 
-                        if index < min(4, transactions.count - 1) {
+                        if index < min(4, sortedTransactions.count - 1) {
                             Divider()
                                 .padding(.leading, 60)
                         }

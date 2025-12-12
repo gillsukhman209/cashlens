@@ -108,12 +108,12 @@ struct SubscriptionsView: View {
                 // Hero Card - Total Monthly Cost
                 totalCostCard
 
-                // Subscriptions List
+                // Subscriptions List (sorted by last charge date, newest first)
                 VStack(spacing: 0) {
-                    ForEach(Array(subscriptions.enumerated()), id: \.element.id) { index, subscription in
+                    ForEach(Array(sortedSubscriptions.enumerated()), id: \.element.id) { index, subscription in
                         SubscriptionRow(subscription: subscription)
 
-                        if index < subscriptions.count - 1 {
+                        if index < sortedSubscriptions.count - 1 {
                             Divider()
                                 .padding(.leading, 72)
                         }
@@ -222,6 +222,11 @@ struct SubscriptionsView: View {
         }
         .padding(.horizontal, 8)
         .padding(.top, 8)
+    }
+
+    // Sort subscriptions by last charge date (newest first)
+    private var sortedSubscriptions: [Subscription] {
+        subscriptions.sorted { $0.lastCharge > $1.lastCharge }
     }
 
     // MARK: - Data Loading

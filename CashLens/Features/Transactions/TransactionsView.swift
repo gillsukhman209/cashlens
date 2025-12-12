@@ -49,14 +49,20 @@ struct TransactionsView: View {
             result = result.filter { $0.pending }
         }
 
-        return result
+        // Sort by date (newest first)
+        return result.sorted { $0.date > $1.date }
     }
 
     var groupedTransactions: [(String, [Transaction])] {
+        // Group transactions by date
         let grouped = Dictionary(grouping: filteredTransactions) { transaction in
-            formatDateHeader(transaction.date)
+            Calendar.current.startOfDay(for: transaction.date)
         }
-        return grouped.sorted { $0.key > $1.key }
+
+        // Sort groups by date (newest first) and format the header
+        return grouped
+            .sorted { $0.key > $1.key }
+            .map { (formatDateHeader($0.key), $0.value.sorted { $0.date > $1.date }) }
     }
 
     var body: some View {

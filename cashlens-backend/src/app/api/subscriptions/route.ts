@@ -184,8 +184,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Sort by amount (highest first)
-    subscriptions.sort((a, b) => b.amount - a.amount);
+    // Sort by last charge date (newest first)
+    subscriptions.sort((a, b) => new Date(b.lastCharge).getTime() - new Date(a.lastCharge).getTime());
 
     // Calculate total monthly cost
     let totalMonthly = 0;
