@@ -42,62 +42,35 @@ export async function GET(request: NextRequest) {
     const db = await getDatabase();
     const userObjectId = new ObjectId(userId);
 
-    // First check for stored subscriptions (from CSV import)
+    // Get stored subscriptions (from CSV import)
     const storedSubscriptions = await db
       .collection('detected_subscriptions')
       .find({ userId: userObjectId })
       .sort({ lastCharge: -1 })
       .toArray();
 
-    if (storedSubscriptions.length > 0) {
-      console.log(`[DEBUG] Subscriptions: Found ${storedSubscriptions.length} stored subscriptions for user ${userId}`);
+    console.log(`[DEBUG] Subscriptions: Found ${storedSubscriptions.length} stored subscriptions for user ${userId}`);
 
-      // Calculate total monthly cost
-      let totalMonthly = 0;
-      const formattedSubs = storedSubscriptions.map((sub) => {
-        let monthlyAmount = sub.amount;
-        switch (sub.frequency) {
-          case 'weekly':
-            monthlyAmount = sub.amount * 4.33;
-            break;
-          case 'bi-weekly':
-            monthlyAmount = sub.amount * 2.17;
-            break;
-          case 'quarterly':
-            monthlyAmount = sub.amount / 3;
-            break;
-          case 'yearly':
-            monthlyAmount = sub.amount / 12;
-            break;
-        }
-        totalMonthly += monthlyAmount;
+    // Format stored subscriptions
+    const csvSubscriptions: (DetectedSubscription & { source: string; normalizedName: string })[] = storedSubscriptions.map((sub) => ({
+      id: sub._id.toString(),
+      merchantName: sub.merchantName,
+      amount: sub.amount,
+      frequency: sub.frequency,
+      category: sub.category,
+      lastCharge: sub.lastCharge,
+      nextExpected: sub.nextExpected,
+      accountName: sub.accountName,
+      accountMask: sub.accountMask,
+      logoUrl: sub.logoUrl,
+      transactionCount: sub.transactionCount,
+      confidence: sub.confidence,
+      transactions: [],
+      source: 'csv',
+      normalizedName: sub.merchantName.toLowerCase().trim().replace(/\s+/g, ' '),
+    }));
 
-        return {
-          id: sub._id.toString(),
-          merchantName: sub.merchantName,
-          amount: sub.amount,
-          frequency: sub.frequency,
-          category: sub.category,
-          lastCharge: sub.lastCharge,
-          nextExpected: sub.nextExpected,
-          accountName: sub.accountName,
-          accountMask: sub.accountMask,
-          logoUrl: sub.logoUrl,
-          transactionCount: sub.transactionCount,
-          confidence: sub.confidence,
-          transactions: [], // Stored subscriptions don't have transaction history
-        };
-      });
-
-      return NextResponse.json({
-        subscriptions: formattedSubs,
-        totalMonthly: Math.round(totalMonthly * 100) / 100,
-        count: formattedSubs.length,
-        source: 'stored',
-      });
-    }
-
-    // Fall back to detecting subscriptions from transactions
+    // Also detect subscriptions from transactions (Plaid data)
     // Get transactions from the last N months
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - months);
@@ -168,7 +141,7 @@ export async function GET(request: NextRequest) {
     console.log(`[DEBUG] Subscriptions: Top merchants: ${topMerchants.map(([m, t]) => `${m}(${t.length})`).join(', ')}`);
 
     // Analyze each merchant group for subscription patterns
-    const subscriptions: DetectedSubscription[] = [];
+    const plaidSubscriptions: (DetectedSubscription & { source: string; normalizedName: string })[] = [];
 
     for (const [merchant, txns] of merchantGroups) {
       // Need at least 2 transactions to detect a pattern
@@ -274,7 +247,7 @@ export async function GET(request: NextRequest) {
           };
         });
 
-      subscriptions.push({
+      plaidSubscriptions.push({
         id: `sub_${merchant.replace(/\s+/g, '_').substring(0, 20)}`,
         merchantName: displayName,
         amount: Math.round(avgAmount * 100) / 100,
@@ -288,15 +261,46 @@ export async function GET(request: NextRequest) {
         transactionCount: txns.length,
         confidence,
         transactions: transactionHistory,
+        source: 'plaid',
+        normalizedName: merchant,
       });
     }
 
-    // Sort by last charge date (newest first)
-    subscriptions.sort((a, b) => new Date(b.lastCharge).getTime() - new Date(a.lastCharge).getTime());
+    console.log(`[DEBUG] Subscriptions: Detected ${plaidSubscriptions.length} subscriptions from Plaid transactions`);
+
+    // Merge CSV and Plaid subscriptions
+    // For duplicates (same merchant), keep the one with more transaction history
+    const mergedMap = new Map<string, DetectedSubscription & { source: string; normalizedName: string }>();
+
+    // Add CSV subscriptions first
+    for (const sub of csvSubscriptions) {
+      mergedMap.set(sub.normalizedName, sub);
+    }
+
+    // Add or merge Plaid subscriptions
+    for (const sub of plaidSubscriptions) {
+      const existing = mergedMap.get(sub.normalizedName);
+      if (!existing) {
+        // New subscription from Plaid
+        mergedMap.set(sub.normalizedName, sub);
+      } else {
+        // Duplicate found - keep the one with more transaction data
+        if (sub.transactionCount > existing.transactionCount) {
+          mergedMap.set(sub.normalizedName, { ...sub, source: 'merged' });
+        } else {
+          // Keep existing but mark as merged
+          mergedMap.set(sub.normalizedName, { ...existing, source: 'merged' });
+        }
+      }
+    }
+
+    // Convert to array and sort
+    const combinedSubscriptions = Array.from(mergedMap.values());
+    combinedSubscriptions.sort((a, b) => new Date(b.lastCharge).getTime() - new Date(a.lastCharge).getTime());
 
     // Calculate total monthly cost
     let totalMonthly = 0;
-    for (const sub of subscriptions) {
+    for (const sub of combinedSubscriptions) {
       switch (sub.frequency) {
         case 'weekly':
           totalMonthly += sub.amount * 4.33;
@@ -316,12 +320,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Remove internal fields before returning
+    const finalSubscriptions = combinedSubscriptions.map(({ normalizedName, ...rest }) => rest);
+
+    console.log(`[DEBUG] Subscriptions: Returning ${finalSubscriptions.length} combined subscriptions (${csvSubscriptions.length} CSV + ${plaidSubscriptions.length} Plaid, merged)`);
+
     return NextResponse.json({
-      subscriptions,
+      subscriptions: finalSubscriptions,
       totalMonthly: Math.round(totalMonthly * 100) / 100,
-      count: subscriptions.length,
+      count: finalSubscriptions.length,
       // Debug info
       _debug: {
+        csvCount: csvSubscriptions.length,
+        plaidCount: plaidSubscriptions.length,
         totalUserTransactions: totalUserTxns,
         csvTransactions: csvTxns,
         filteredTransactions: transactions.length,
