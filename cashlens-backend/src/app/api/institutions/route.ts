@@ -24,12 +24,14 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Get account counts for each institution
+    // Get accounts for each institution
     const institutions = await Promise.all(
       plaidItems.map(async (item) => {
-        const accountCount = await db
+        const accounts = await db
           .collection('accounts')
-          .countDocuments({ plaidItemId: item._id, isHidden: false });
+          .find({ plaidItemId: item._id })
+          .sort({ type: 1, name: 1 })
+          .toArray();
 
         return {
           id: item._id.toString(),
@@ -39,10 +41,21 @@ export async function GET(request: NextRequest) {
           logo: item.institutionLogo,
           color: item.institutionColor,
           status: item.status,
-          accountCount,
+          accountCount: accounts.filter(a => !a.isHidden).length,
           lastSyncedAt: item.lastSyncedAt,
           createdAt: item.createdAt,
           error: item.error,
+          accounts: accounts.map(acc => ({
+            id: acc._id.toString(),
+            accountId: acc.accountId,
+            name: acc.name,
+            officialName: acc.officialName,
+            type: acc.type,
+            subtype: acc.subtype,
+            mask: acc.mask,
+            currentBalance: acc.currentBalance,
+            isHidden: acc.isHidden || false,
+          })),
         };
       })
     );

@@ -122,6 +122,34 @@ class APIClient: ObservableObject {
         return try JSONDecoder().decode(AccountsResponse.self, from: data)
     }
 
+    func toggleAccountVisibility(accountId: String, isHidden: Bool) async throws {
+        guard let userId = userId else {
+            throw APIError.noUser
+        }
+
+        let url = URL(string: "\(baseURL)/accounts")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "userId": userId,
+            "accountId": accountId,
+            "isHidden": isHidden
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to update account visibility")
+        }
+    }
+
     // MARK: - Transactions
 
     func getTransactions(startDate: Date? = nil, endDate: Date? = nil, limit: Int = 50, offset: Int = 0) async throws -> TransactionsResponse {
@@ -165,6 +193,26 @@ class APIClient: ObservableObject {
         let url = URL(string: "\(baseURL)/institutions?userId=\(userId)")!
         let (data, _) = try await URLSession.shared.data(from: url)
         return try JSONDecoder().decode(InstitutionsResponse.self, from: data)
+    }
+
+    func deleteInstitution(itemId: String) async throws {
+        guard let userId = userId else {
+            throw APIError.noUser
+        }
+
+        let url = URL(string: "\(baseURL)/institutions?userId=\(userId)&itemId=\(itemId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to remove bank connection")
+        }
     }
 
     // MARK: - Subscriptions

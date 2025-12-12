@@ -111,3 +111,46 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { userId, accountId, isHidden } = body;
+
+    if (!userId || !accountId || typeof isHidden !== 'boolean') {
+      return NextResponse.json(
+        { error: 'userId, accountId, and isHidden are required' },
+        { status: 400 }
+      );
+    }
+
+    const db = await getDatabase();
+    const userObjectId = new ObjectId(userId);
+    const accountObjectId = new ObjectId(accountId);
+
+    // Update the account's isHidden status
+    const result = await db.collection('accounts').updateOne(
+      { _id: accountObjectId, userId: userObjectId },
+      { $set: { isHidden, updatedAt: new Date() } }
+    );
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json(
+        { error: 'Account not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      accountId,
+      isHidden,
+    });
+  } catch (error: any) {
+    console.error('Error updating account visibility:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to update account' },
+      { status: 500 }
+    );
+  }
+}

@@ -228,6 +228,76 @@ struct LinkedInstitution: Codable, Identifiable {
     let accountCount: Int
     let lastSyncedAt: String?
     let createdAt: String?
+    let accounts: [InstitutionAccount]?
+
+    // Summary of account types for display
+    var accountSummary: String {
+        guard let accounts = accounts, !accounts.isEmpty else {
+            return "\(accountCount) account\(accountCount == 1 ? "" : "s")"
+        }
+
+        let checking = accounts.filter { $0.subtype == "checking" }.count
+        let savings = accounts.filter { $0.subtype == "savings" }.count
+        let credit = accounts.filter { $0.type == "credit" }.count
+
+        var parts: [String] = []
+        if checking > 0 { parts.append("\(checking) checking") }
+        if savings > 0 { parts.append("\(savings) savings") }
+        if credit > 0 { parts.append("\(credit) credit") }
+
+        if parts.isEmpty {
+            return "\(accountCount) account\(accountCount == 1 ? "" : "s")"
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+struct InstitutionAccount: Codable, Identifiable {
+    let id: String
+    let accountId: String
+    let name: String
+    let officialName: String?
+    let type: String
+    let subtype: String?
+    let mask: String?
+    let currentBalance: Double
+    let isHidden: Bool
+
+    var displayName: String {
+        if let mask = mask {
+            return "\(name) ••••\(mask)"
+        }
+        return name
+    }
+
+    var typeLabel: String {
+        if let subtype = subtype {
+            return subtype.capitalized
+        }
+        return type.capitalized
+    }
+
+    var typeIcon: String {
+        switch type {
+        case "depository":
+            switch subtype {
+            case "checking": return "dollarsign.circle.fill"
+            case "savings": return "banknote.fill"
+            default: return "building.columns.fill"
+            }
+        case "credit": return "creditcard.fill"
+        case "loan": return "doc.text.fill"
+        case "investment": return "chart.line.uptrend.xyaxis"
+        default: return "building.columns.fill"
+        }
+    }
+
+    var displayBalance: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: currentBalance)) ?? "$\(currentBalance)"
+    }
 }
 
 struct InstitutionsResponse: Codable {

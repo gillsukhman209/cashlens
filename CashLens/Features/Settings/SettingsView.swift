@@ -141,7 +141,12 @@ struct SettingsView: View {
                     emptyBanksView
                 } else {
                     ForEach(Array(institutions.enumerated()), id: \.element.id) { index, institution in
-                        ColorfulLinkedBankRow(institution: institution)
+                        ExpandableLinkedBankRow(
+                            institution: institution,
+                            onToggleAccount: { account, isHidden in
+                                Task { await toggleAccountVisibility(account: account, isHidden: isHidden) }
+                            }
+                        )
 
                         if index < institutions.count - 1 {
                             Divider()
@@ -418,6 +423,17 @@ struct SettingsView: View {
         }
     }
 
+    private func toggleAccountVisibility(account: InstitutionAccount, isHidden: Bool) async {
+        do {
+            try await apiClient.toggleAccountVisibility(accountId: account.id, isHidden: isHidden)
+            // Reload institutions to get updated account status
+            await loadInstitutions()
+        } catch {
+            // Silently handle error - the toggle will reset on next load
+            print("Error toggling account visibility: \(error)")
+        }
+    }
+
     private func syncData() async {
         isSyncing = true
         do {
@@ -466,9 +482,11 @@ struct ColorfulSectionHeader: View {
     }
 }
 
-// MARK: - Colorful Linked Bank Row
-struct ColorfulLinkedBankRow: View {
+// MARK: - Expandable Linked Bank Row
+struct ExpandableLinkedBankRow: View {
     let institution: LinkedInstitution
+    let onToggleAccount: (InstitutionAccount, Bool) -> Void
+    @State private var isExpanded = false
 
     var institutionColor: Color {
         let hash = institution.name.hashValue
@@ -477,61 +495,181 @@ struct ColorfulLinkedBankRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(
-                        LinearGradient(
-                            colors: [institutionColor.opacity(0.2), institutionColor.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 44, height: 44)
+        VStack(spacing: 0) {
+            // Bank Header (tappable to expand)
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    colors: [institutionColor.opacity(0.2), institutionColor.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
 
-                Image(systemName: "building.columns.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(institutionColor)
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(institutionColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(institution.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+                        Text(institution.accountSummary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    // Expand/Collapse indicator
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 4)
+
+                    // Status indicator
+                    ZStack {
+                        Circle()
+                            .fill(institution.status == "active" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                            .frame(width: 30, height: 30)
+
+                        Image(systemName: institution.status == "active" ? "checkmark" : "exclamationmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(institution.status == "active" ? .green : .orange)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            // Expanded accounts list
+            if isExpanded {
+                VStack(spacing: 0) {
+                    Divider()
+                        .padding(.leading, 68)
+
+                    if let accounts = institution.accounts, !accounts.isEmpty {
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+                            AccountToggleRow(
+                                account: account,
+                                onToggle: { isHidden in
+                                    onToggleAccount(account, isHidden)
+                                }
+                            )
+
+                            if index < accounts.count - 1 {
+                                Divider()
+                                    .padding(.leading, 84)
+                            }
+                        }
+                    } else {
+                        // No accounts available - backend might need deployment
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                            Text("No accounts found. Try syncing your data.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                    }
+                }
+                .background(Color(.systemGray6).opacity(0.5))
+            }
+        }
+    }
+}
+
+// MARK: - Account Toggle Row
+struct AccountToggleRow: View {
+    let account: InstitutionAccount
+    let onToggle: (Bool) -> Void
+    @State private var isEnabled: Bool
+
+    init(account: InstitutionAccount, onToggle: @escaping (Bool) -> Void) {
+        self.account = account
+        self.onToggle = onToggle
+        self._isEnabled = State(initialValue: !account.isHidden)
+    }
+
+    var accountColor: Color {
+        switch account.type.lowercased() {
+        case "depository":
+            return account.subtype?.lowercased() == "savings" ? .green : .blue
+        case "credit":
+            return .orange
+        case "investment":
+            return .purple
+        default:
+            return .blue
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Account type icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(accountColor.opacity(0.15))
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: account.typeIcon)
+                    .font(.system(size: 14))
+                    .foregroundColor(accountColor)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(institution.name)
-                    .font(.body)
+            // Account details
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.name)
+                    .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+                    .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    Text("\(institution.accountCount) account\(institution.accountCount == 1 ? "" : "s")")
+                    Text(account.typeLabel)
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    if institution.status == "needs_reauth" {
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(Color.orange)
-                                .frame(width: 6, height: 6)
-                            Text("Needs reconnection")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
+                    if let mask = account.mask {
+                        Text("••••\(mask)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
+
+                    Text(account.displayBalance)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(account.currentBalance >= 0 ? .secondary : .red)
                 }
             }
 
             Spacer()
 
-            ZStack {
-                Circle()
-                    .fill(institution.status == "active" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
-                    .frame(width: 30, height: 30)
-
-                Image(systemName: institution.status == "active" ? "checkmark" : "exclamationmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(institution.status == "active" ? .green : .orange)
-            }
+            // Toggle switch
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .tint(.green)
+                .onChange(of: isEnabled) { _, newValue in
+                    onToggle(!newValue) // isHidden is opposite of isEnabled
+                }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.leading, 12)
+        .padding(.vertical, 10)
     }
 }
 

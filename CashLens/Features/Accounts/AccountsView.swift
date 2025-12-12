@@ -7,6 +7,9 @@ struct AccountsView: View {
     @State private var isLoading = true
     @State private var error: String?
     @State private var showAddBank = false
+    @State private var institutionToDelete: LinkedInstitution?
+    @State private var showDeleteConfirmation = false
+    @State private var isDeleting = false
 
     // Filter out hidden accounts
     private var visibleAccounts: [Account] {
@@ -266,6 +269,11 @@ struct AccountsView: View {
                 // Net Worth Summary
                 netWorthCard
 
+                // Linked Banks Section
+                if !institutions.isEmpty {
+                    linkedBanksSection
+                }
+
                 // Add Bank Button
                 addBankButton
 
@@ -274,6 +282,40 @@ struct AccountsView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
+        }
+        .alert("Remove Bank Connection?", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                institutionToDelete = nil
+            }
+            Button("Remove", role: .destructive) {
+                if let institution = institutionToDelete {
+                    Task { await deleteInstitution(institution) }
+                }
+            }
+        } message: {
+            if let institution = institutionToDelete {
+                Text("This will permanently remove \(institution.name) and all its accounts and transactions from CashLens. This cannot be undone.")
+            }
+        }
+        .overlay {
+            if isDeleting {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Removing bank...")
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(24)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(16)
+                    .shadow(radius: 10)
+                }
+            }
         }
     }
 
@@ -354,6 +396,45 @@ struct AccountsView: View {
         .buttonStyle(PlainButtonStyle())
     }
 
+    // MARK: - Linked Banks Section
+    private var linkedBanksSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Linked Banks")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+
+                Spacer()
+
+                Text("\(institutions.count) connected")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(institutions.enumerated()), id: \.element.id) { index, institution in
+                    LinkedBankRow(
+                        institution: institution,
+                        onDelete: {
+                            institutionToDelete = institution
+                            showDeleteConfirmation = true
+                        }
+                    )
+
+                    if index < institutions.count - 1 {
+                        Divider()
+                            .padding(.leading, 72)
+                    }
+                }
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+        }
+    }
+
     // MARK: - Data Loading
     private func loadData() async {
         isLoading = true
@@ -379,11 +460,115 @@ struct AccountsView: View {
         }
     }
 
+    private func deleteInstitution(_ institution: LinkedInstitution) async {
+        isDeleting = true
+        institutionToDelete = nil
+
+        do {
+            try await apiClient.deleteInstitution(itemId: institution.id)
+
+            // Refresh all data after deletion
+            await loadData()
+
+            await MainActor.run {
+                isDeleting = false
+            }
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+                isDeleting = false
+            }
+        }
+    }
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = "USD"
         return formatter.string(from: NSNumber(value: amount)) ?? "$0.00"
+    }
+}
+
+// MARK: - Linked Bank Row
+struct LinkedBankRow: View {
+    let institution: LinkedInstitution
+    let onDelete: () -> Void
+
+    var institutionColor: Color {
+        let hash = institution.name.hashValue
+        let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .cyan]
+        return colors[abs(hash) % colors.count]
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Bank Icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [institutionColor.opacity(0.2), institutionColor.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: "building.columns.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(institutionColor)
+            }
+
+            // Bank Details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(institution.name)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.2))
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text("\(institution.accountCount) account\(institution.accountCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if institution.status == "active" {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 6, height: 6)
+                            Text("Connected")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                    } else {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text(institution.status.capitalized)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Delete Button
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                    .foregroundColor(.red.opacity(0.8))
+                    .padding(8)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
