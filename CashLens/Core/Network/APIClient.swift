@@ -249,6 +249,63 @@ class APIClient: ObservableObject {
         return try decoder.decode(SubscriptionsResponse.self, from: data)
     }
 
+    func updateSubscription(subscriptionKey: String, customName: String?, customAmount: Double?, customFrequency: String?) async throws {
+        guard let userId = userId else {
+            throw APIError.noUser
+        }
+
+        // URL encode the subscription key
+        let encodedKey = subscriptionKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? subscriptionKey
+        let url = URL(string: "\(baseURL)/subscriptions/\(encodedKey)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = ["userId": userId]
+        if let customName = customName {
+            body["customName"] = customName
+        }
+        if let customAmount = customAmount {
+            body["customAmount"] = customAmount
+        }
+        if let customFrequency = customFrequency {
+            body["customFrequency"] = customFrequency
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to update subscription")
+        }
+    }
+
+    func deleteSubscription(subscriptionKey: String) async throws {
+        guard let userId = userId else {
+            throw APIError.noUser
+        }
+
+        // URL encode the subscription key
+        let encodedKey = subscriptionKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? subscriptionKey
+        let url = URL(string: "\(baseURL)/subscriptions/\(encodedKey)?userId=\(userId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
+               let errorMessage = errorResponse["error"] {
+                throw APIError.networkError(errorMessage)
+            }
+            throw APIError.networkError("Failed to delete subscription")
+        }
+    }
+
     // MARK: - Manual Import
 
     func createManualAccount(name: String, type: String, subtype: String?, institutionName: String) async throws -> CreateManualAccountResponse {

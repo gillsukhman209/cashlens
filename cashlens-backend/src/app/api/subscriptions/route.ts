@@ -295,8 +295,49 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert to array and sort
-    const combinedSubscriptions = Array.from(mergedMap.values());
+    let combinedSubscriptions = Array.from(mergedMap.values());
     combinedSubscriptions.sort((a, b) => new Date(b.lastCharge).getTime() - new Date(a.lastCharge).getTime());
+
+    // Fetch user overrides and apply them
+    const userOverrides = await db
+      .collection('subscription_user_overrides')
+      .find({ userId: userObjectId })
+      .toArray();
+
+    console.log(`[DEBUG] Subscriptions: Found ${userOverrides.length} user overrides`);
+
+    // Create a map for quick lookup
+    const overrideMap = new Map(
+      userOverrides.map((o) => [o.subscriptionKey, o])
+    );
+
+    // Apply overrides and filter deleted subscriptions
+    combinedSubscriptions = combinedSubscriptions
+      .filter((sub) => {
+        const override = overrideMap.get(sub.normalizedName);
+        // Filter out deleted subscriptions
+        if (override?.isDeleted) {
+          console.log(`[DEBUG] Subscriptions: Filtering out deleted subscription: ${sub.normalizedName}`);
+          return false;
+        }
+        return true;
+      })
+      .map((sub) => {
+        const override = overrideMap.get(sub.normalizedName);
+        if (override) {
+          // Apply user overrides
+          return {
+            ...sub,
+            merchantName: override.customName || sub.merchantName,
+            amount: override.customAmount !== null && override.customAmount !== undefined
+              ? override.customAmount
+              : sub.amount,
+            frequency: override.customFrequency || sub.frequency,
+            isUserModified: true,
+          };
+        }
+        return { ...sub, isUserModified: false };
+      });
 
     // Calculate total monthly cost
     let totalMonthly = 0;

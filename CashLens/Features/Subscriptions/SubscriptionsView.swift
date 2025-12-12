@@ -154,7 +154,9 @@ struct SubscriptionsView: View {
                 // Subscriptions List (sorted by last charge date, newest first)
                 VStack(spacing: 0) {
                     ForEach(Array(sortedSubscriptions.enumerated()), id: \.element.id) { index, subscription in
-                        SubscriptionRow(subscription: subscription)
+                        SubscriptionRow(subscription: subscription, onUpdate: {
+                            Task { await loadSubscriptions() }
+                        })
 
                         if index < sortedSubscriptions.count - 1 {
                             Divider()
@@ -371,6 +373,8 @@ struct SubscriptionsView: View {
 // MARK: - Subscription Row
 struct SubscriptionRow: View {
     let subscription: Subscription
+    @EnvironmentObject var apiClient: APIClient
+    var onUpdate: (() -> Void)?
     @State private var showDetail = false
 
     var categoryColor: Color {
@@ -401,7 +405,8 @@ struct SubscriptionRow: View {
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showDetail) {
-            SubscriptionDetailView(subscription: subscription)
+            SubscriptionDetailView(subscription: subscription, onUpdate: onUpdate)
+                .environmentObject(apiClient)
         }
     }
 

@@ -3,6 +3,22 @@ import SwiftUI
 struct SubscriptionDetailView: View {
     let subscription: Subscription
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var apiClient: APIClient
+
+    @State private var showEditSheet = false
+    @State private var showDeleteAlert = false
+    @State private var isDeleting = false
+    @State private var deleteError: String?
+
+    // Editable fields
+    @State private var editedName: String = ""
+    @State private var editedAmount: String = ""
+    @State private var editedFrequency: String = ""
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    // Callback to refresh parent view
+    var onUpdate: (() -> Void)?
 
     var body: some View {
         NavigationView {
@@ -35,6 +51,9 @@ struct SubscriptionDetailView: View {
                             transactionHistoryCard(transactions)
                         }
 
+                        // Delete Button
+                        deleteButton
+
                         Spacer()
                             .frame(height: 40)
                     }
@@ -45,12 +64,176 @@ struct SubscriptionDetailView: View {
             .navigationTitle("Subscription")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Edit") {
+                        // Initialize edit fields with current values
+                        editedName = subscription.merchantName
+                        editedAmount = String(format: "%.2f", subscription.amount)
+                        editedFrequency = subscription.frequency
+                        showEditSheet = true
+                    }
+                    .fontWeight(.medium)
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
                     .fontWeight(.semibold)
                 }
+            }
+            .sheet(isPresented: $showEditSheet) {
+                editSheet
+            }
+            .alert("Delete Subscription", isPresented: $showDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    Task { await deleteSubscription() }
+                }
+            } message: {
+                Text("Are you sure you want to delete \"\(subscription.merchantName)\"? This action cannot be undone.")
+            }
+            .alert("Error", isPresented: .constant(deleteError != nil)) {
+                Button("OK") { deleteError = nil }
+            } message: {
+                Text(deleteError ?? "")
+            }
+        }
+    }
+
+    // MARK: - Delete Button
+    private var deleteButton: some View {
+        Button(action: {
+            showDeleteAlert = true
+        }) {
+            HStack {
+                if isDeleting {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else {
+                    Image(systemName: "trash")
+                    Text("Delete Subscription")
+                }
+            }
+            .font(.body)
+            .fontWeight(.semibold)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color.red)
+            .cornerRadius(14)
+        }
+        .disabled(isDeleting)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Edit Sheet
+    private var editSheet: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Subscription Name")) {
+                    TextField("Name", text: $editedName)
+                }
+
+                Section(header: Text("Amount")) {
+                    HStack {
+                        Text("$")
+                        TextField("0.00", text: $editedAmount)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                Section(header: Text("Frequency")) {
+                    Picker("Frequency", selection: $editedFrequency) {
+                        Text("Weekly").tag("weekly")
+                        Text("Bi-weekly").tag("bi-weekly")
+                        Text("Monthly").tag("monthly")
+                        Text("Quarterly").tag("quarterly")
+                        Text("Yearly").tag("yearly")
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if let error = saveError {
+                    Section {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Edit Subscription")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        showEditSheet = false
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        Task { await saveChanges() }
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(isSaving || editedName.isEmpty)
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+        }
+    }
+
+    // MARK: - Save Changes
+    private func saveChanges() async {
+        isSaving = true
+        saveError = nil
+
+        // Parse amount
+        let amount = Double(editedAmount) ?? subscription.amount
+
+        // Get the subscription key (normalized merchant name)
+        let subscriptionKey = subscription.merchantName.lowercased().trimmingCharacters(in: .whitespaces)
+
+        do {
+            try await apiClient.updateSubscription(
+                subscriptionKey: subscriptionKey,
+                customName: editedName != subscription.merchantName ? editedName : nil,
+                customAmount: amount != subscription.amount ? amount : nil,
+                customFrequency: editedFrequency != subscription.frequency ? editedFrequency : nil
+            )
+
+            await MainActor.run {
+                isSaving = false
+                showEditSheet = false
+                onUpdate?()
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                saveError = error.localizedDescription
+                isSaving = false
+            }
+        }
+    }
+
+    // MARK: - Delete Subscription
+    private func deleteSubscription() async {
+        isDeleting = true
+        deleteError = nil
+
+        // Get the subscription key (normalized merchant name)
+        let subscriptionKey = subscription.merchantName.lowercased().trimmingCharacters(in: .whitespaces)
+
+        do {
+            try await apiClient.deleteSubscription(subscriptionKey: subscriptionKey)
+
+            await MainActor.run {
+                isDeleting = false
+                onUpdate?()
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                deleteError = error.localizedDescription
+                isDeleting = false
             }
         }
     }
