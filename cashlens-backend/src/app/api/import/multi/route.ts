@@ -77,6 +77,8 @@ interface DetectedSubscription {
 }
 
 // Detect subscriptions from a list of transactions
+// This function focuses on TIMING consistency, not amount consistency
+// Utility bills (PG&E, water, etc.) can vary significantly in amount but are still subscriptions
 function detectSubscriptions(transactions: ParsedTransaction[], accountName: string | null): DetectedSubscription[] {
   // Group transactions by merchant name (normalized)
   const merchantGroups = new Map<string, ParsedTransaction[]>();
@@ -87,10 +89,11 @@ function detectSubscriptions(transactions: ParsedTransaction[], accountName: str
 
     if (!merchant || merchant.length < 2) continue;
 
-    // Skip common non-subscription patterns
+    // Skip common non-subscription patterns (transfers, not actual bills)
     const skipPatterns = [
-      'transfer', 'payment', 'deposit', 'atm', 'withdrawal',
-      'venmo', 'zelle', 'paypal', 'cash app', 'wire'
+      'transfer', 'deposit', 'atm', 'withdrawal',
+      'venmo', 'zelle', 'cash app', 'wire',
+      'interest', 'fee', 'refund', 'credit'
     ];
     if (skipPatterns.some(p => merchant.includes(p))) continue;
 
@@ -108,15 +111,12 @@ function detectSubscriptions(transactions: ParsedTransaction[], accountName: str
     // Sort by date (oldest first)
     txns.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    // Calculate amount statistics
+    // Calculate amount statistics (for display, not filtering)
     const amounts = txns.map(t => t.amount);
     const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
     const minAmount = Math.min(...amounts);
     const maxAmount = Math.max(...amounts);
-
-    // Check amount consistency (within 20% of average)
-    const amountVariance = (maxAmount - minAmount) / avgAmount;
-    if (amountVariance > 0.20) continue;
+    const amountVariance = avgAmount > 0 ? (maxAmount - minAmount) / avgAmount : 0;
 
     // Calculate interval between transactions
     const intervals: number[] = [];
@@ -125,40 +125,55 @@ function detectSubscriptions(transactions: ParsedTransaction[], accountName: str
       intervals.push(daysDiff);
     }
 
-    // Determine frequency based on average interval
+    // Determine frequency based on average interval (with wider tolerance)
     const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
     let frequency: string;
     let expectedInterval: number;
+    let maxAllowedVariance: number;
 
-    if (avgInterval >= 25 && avgInterval <= 35) {
+    if (avgInterval >= 20 && avgInterval <= 40) {
+      // Monthly - most common, allow more variance (bills can be 28-35 days apart)
       frequency = 'monthly';
       expectedInterval = 30;
-    } else if (avgInterval >= 12 && avgInterval <= 16) {
+      maxAllowedVariance = 12; // Allow up to 12 days variance for monthly
+    } else if (avgInterval >= 10 && avgInterval <= 18) {
       frequency = 'bi-weekly';
       expectedInterval = 14;
-    } else if (avgInterval >= 5 && avgInterval <= 9) {
+      maxAllowedVariance = 5;
+    } else if (avgInterval >= 4 && avgInterval <= 10) {
       frequency = 'weekly';
       expectedInterval = 7;
-    } else if (avgInterval >= 355 && avgInterval <= 375) {
+      maxAllowedVariance = 3;
+    } else if (avgInterval >= 340 && avgInterval <= 390) {
       frequency = 'yearly';
       expectedInterval = 365;
-    } else if (avgInterval >= 85 && avgInterval <= 95) {
+      maxAllowedVariance = 30; // Allow a month variance for yearly
+    } else if (avgInterval >= 75 && avgInterval <= 105) {
       frequency = 'quarterly';
       expectedInterval = 90;
+      maxAllowedVariance = 15;
     } else {
+      // Not a recognized frequency pattern - skip
       continue;
     }
 
-    // Check interval consistency
-    const intervalVariance = intervals.map(i => Math.abs(i - expectedInterval));
-    const maxVariance = Math.max(...intervalVariance);
-    if (maxVariance > 7) continue;
+    // Check interval consistency (with more tolerance)
+    const intervalVariances = intervals.map(i => Math.abs(i - expectedInterval));
+    const maxVariance = Math.max(...intervalVariances);
+    const avgVariance = intervalVariances.reduce((a, b) => a + b, 0) / intervalVariances.length;
 
-    // Calculate confidence score
+    // Skip if timing is too inconsistent
+    if (maxVariance > maxAllowedVariance) continue;
+
+    // Calculate confidence score based on timing consistency (not amount)
     let confidence = 1.0;
-    confidence -= amountVariance * 0.5;
-    confidence -= (maxVariance / expectedInterval) * 0.3;
-    confidence = Math.max(0.5, Math.min(1.0, confidence));
+    // Reduce confidence based on timing variance
+    confidence -= (avgVariance / expectedInterval) * 0.4;
+    // Slightly reduce confidence for variable amounts (but don't exclude)
+    if (amountVariance > 0.5) {
+      confidence -= 0.1; // Variable amount subscriptions get slightly lower confidence
+    }
+    confidence = Math.max(0.4, Math.min(1.0, confidence));
 
     const lastTxn = txns[txns.length - 1];
     const lastChargeDate = lastTxn.date;
