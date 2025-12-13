@@ -14,6 +14,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Webhook URL for real-time transaction updates
+    const webhookUrl = process.env.PLAID_WEBHOOK_URL || 'https://cashlens-backend.vercel.app/api/plaid/webhook';
+
     const response = await plaidClient.linkTokenCreate({
       user: {
         client_user_id: userId,
@@ -22,8 +25,7 @@ export async function POST(request: NextRequest) {
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: 'en',
-      // Optional: Add webhook URL when deployed
-      // webhook: process.env.PLAID_WEBHOOK_URL,
+      webhook: webhookUrl,
     });
 
     return NextResponse.json({
